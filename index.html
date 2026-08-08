@@ -425,10 +425,6 @@
     <div id="home-sacko"></div>
     <div id="home-awards"></div>
     <div class="stats" id="home-stats"></div>
-    <div class="card" id="home-franchises-card">
-      <h2>The Franchises</h2>
-      <div class="franchise-strip" id="home-franchises"></div>
-    </div>
     <div class="grid2">
       <div class="card">
         <h2>🗳 On the Ballot</h2>
@@ -891,7 +887,6 @@ async function boot() {
     $("nav").classList.remove("hidden");
     $("settings-league-id").textContent = state.leagueId;
     renderHome();
-    renderFranchises();
     renderVote();
     renderRules();
     loadHistory().then(() => {
@@ -1247,13 +1242,6 @@ function renderHomeAwards() {
     ${massacre ? `<div class="award"><div class="k">🔪 The Massacre</div><div class="v">${esc(W(massacre).o.name)} over ${esc(L(massacre).o.name)}</div><div class="c">by ${Math.abs(massacre.a.pts - massacre.b.pts).toFixed(2)}</div></div>` : ""}
     ${escape ? `<div class="award green"><div class="k">😮‍💨 The Escape</div><div class="v">${esc(W(escape).o.name)} past ${esc(L(escape).o.name)}</div><div class="c">by ${Math.abs(escape.a.pts - escape.b.pts).toFixed(2)}</div></div>` : ""}
   </div>`;
-}
-
-function renderFranchises() {
-  $("home-franchises").innerHTML = [...state.users]
-    .sort((a, b) => a.display_name.localeCompare(b.display_name))
-    .map((u) => `<button class="fr-pill" data-goto="owners" title="Open the owner files">${avatarImg(u.avatar)}<span>${esc((u.metadata && u.metadata.team_name) || u.display_name)}</span></button>`)
-    .join("");
 }
 
 function countUp(el) {
