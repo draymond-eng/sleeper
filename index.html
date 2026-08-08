@@ -248,6 +248,51 @@
 
   footer{color:var(--muted);font-size:12px;text-align:center;padding:24px;border-top:1px solid var(--line)}
 
+  /* ---------- motion ---------- */
+  @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+  @keyframes growBar{from{width:0}}
+  @keyframes slam{0%{transform:rotate(-8deg) scale(2.4);opacity:0}65%{transform:rotate(-8deg) scale(.94);opacity:1}100%{transform:rotate(-8deg) scale(1);opacity:.9}}
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+  main section .card{animation:fadeUp .45s ease both}
+  main section > .card:nth-of-type(2), .grid2 .card:nth-child(2){animation-delay:.1s}
+  main section > .card:nth-of-type(3){animation-delay:.18s}
+  .hero-champ{animation:fadeUp .5s ease both}
+  .hero-sacko{animation:fadeUp .5s ease .08s both}
+  #home-awards .awards{animation:fadeUp .5s ease .14s both}
+  .stats{animation:fadeUp .5s ease .2s both}
+  .hero-champ .cup{animation:float 3.5s ease-in-out infinite}
+  .stamp{animation:slam .55s ease .35s both}
+  .bar > div{animation:growBar .9s ease both}
+  .tab{transition:color .15s ease}
+  .record{animation:fadeUp .4s ease both}
+  .record:nth-child(2){animation-delay:.06s}.record:nth-child(3){animation-delay:.12s}
+  .record:nth-child(4){animation-delay:.18s}.record:nth-child(5){animation-delay:.24s}
+  .record:nth-child(6){animation-delay:.3s}.record:nth-child(7){animation-delay:.36s}
+  .record:nth-child(8){animation-delay:.42s}.record:nth-child(9){animation-delay:.48s}
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+  }
+
+  /* ---------- owner bios ---------- */
+  .bio-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:14px}
+  .bio-card{
+    background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);
+    border-radius:14px;padding:15px 16px;box-shadow:var(--shadow);
+    animation:fadeUp .45s ease both;transition:transform .15s ease,border-color .15s ease;
+  }
+  .bio-card:hover{transform:translateY(-3px);border-color:#3a4a8a}
+  .bio-head{display:flex;align-items:center;gap:11px;margin-bottom:8px}
+  .bio-name{font-family:var(--display);font-size:20px;letter-spacing:.6px}
+  .bio-badges{margin-left:auto;font-size:15px;letter-spacing:2px}
+  .bio-title{color:var(--accent);font-size:11px;text-transform:uppercase;letter-spacing:1.4px;font-weight:700;margin:2px 0 8px}
+  .bio-motto{color:var(--muted);font-size:12.5px;font-style:italic;margin:0 0 10px;line-height:1.5}
+  .bio-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;border-top:1px solid rgba(40,50,85,.6);padding-top:9px}
+  .bio-stats .k{color:var(--muted);font-size:9.5px;text-transform:uppercase;letter-spacing:.7px}
+  .bio-stats .v{font-family:var(--display);font-size:17px;letter-spacing:.5px}
+  .bio-rivals{margin-top:9px;font-size:12px;color:var(--muted);line-height:1.7}
+  .bio-rivals b{color:var(--text)}
+  .fr-pill{cursor:pointer;color:var(--text)}
+
   /* home extras */
   .franchise-strip{display:flex;flex-wrap:wrap;gap:8px}
   .fr-pill{
@@ -348,6 +393,7 @@
 
 <nav id="nav" class="hidden">
   <button class="tab active" data-view="home">Home</button>
+  <button class="tab" data-view="owners">Owners</button>
   <button class="tab" data-view="vote">League Vote</button>
   <button class="tab" data-view="bank">Bank</button>
   <button class="tab" data-view="lottery">Lottery</button>
@@ -399,6 +445,15 @@
           <a href="#" data-goto="rules">constitution we argue about</a>.
         </p>
       </div>
+    </div>
+  </section>
+
+  <!-- ============ OWNERS ============ -->
+  <section id="view-owners" class="hidden">
+    <div class="card">
+      <h2>🗂 The Owners</h2>
+      <p class="sub">Twelve franchises, one trophy. Career numbers pulled from every season on record — grudges included.</p>
+      <div class="bio-grid" id="owners-grid"></div>
     </div>
   </section>
 
@@ -576,7 +631,7 @@
 </main>
 
 <footer>
-  Built for the league · Data from the <a href="https://docs.sleeper.com" target="_blank" rel="noopener">Sleeper API</a> · Not affiliated with Sleeper
+  <span id="footer-est"></span>Built for the league · Data from the <a href="https://docs.sleeper.com" target="_blank" rel="noopener">Sleeper API</a> · Not affiliated with Sleeper
 </footer>
 
 <div id="a2hs" class="hidden">
@@ -657,6 +712,13 @@ const BANK = {
   payTo: "Zelle: 301-213-2762",
   paid: [],
 };
+
+/* 3b) Owner bios — optional flavor for the Owners page, keyed by Sleeper
+      display name (not case-sensitive). Career stats and head-to-heads
+      fill in automatically; this is for the trash talk. Example:
+      "draymondwashington": { motto: "Ring or bust.", title: "The Architect" },
+*/
+const BIOS = {};
 
 /* 4) The bylaws, shown on the Constitution tab. */
 const CONSTITUTION = [
@@ -826,7 +888,11 @@ async function boot() {
     renderFranchises();
     renderVote();
     renderRules();
-    loadHistory().then(() => { renderHomeChamp(); });   // fills in the champ banner when ready
+    loadHistory().then(() => {
+      renderHomeChamp();
+      const oldest = (state.history || []).filter((s) => s.played).slice(-1)[0];
+      if (oldest) $("footer-est").textContent = `${league.name || "The league"} · Est. ${oldest.season} · `;
+    });
   } catch (e) {
     showView("setup");
     setMsg("setup-msg", "err", `Couldn't load league ${esc(state.leagueId)} — ${esc(e.message)}. Double-check the ID or look it up by username below.`);
@@ -841,11 +907,12 @@ function setMsg(id, kind, html) {
 }
 
 /* ---------------- views / tabs ---------------- */
-const VIEWS = ["setup", "home", "vote", "bank", "lottery", "draft", "records", "champs", "rules", "settings"];
+const VIEWS = ["setup", "home", "owners", "vote", "bank", "lottery", "draft", "records", "champs", "rules", "settings"];
 function showView(v) {
   state.view = v;
   for (const x of VIEWS) $(`view-${x}`).classList.toggle("hidden", x !== v);
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === v));
+  if (v === "owners") renderOwners();
   if (v === "vote") renderVote();
   if (v === "bank") renderBank();
   if (v === "lottery") renderLottery();
@@ -1051,15 +1118,16 @@ function renderHome() {
   let countdown = "";
   if (!inSeason && nfl.season_start_date) {
     const days = Math.ceil((new Date(nfl.season_start_date) - Date.now()) / 86400000);
-    if (days > 0) countdown = `<div class="stat"><div class="k">Kickoff countdown</div><div class="v">${days} <small>days</small></div></div>`;
+    if (days > 0) countdown = `<div class="stat"><div class="k">Kickoff countdown</div><div class="v"><span data-count="${days}">0</span> <small>days</small></div></div>`;
   }
   const open = PROPOSALS.filter((p) => p.status === "open").length;
   $("home-stats").innerHTML = `
     <div class="stat"><div class="k">Season</div><div class="v">${esc(league.season)} <small>${esc(nfl.season_type)}</small></div></div>
     ${inSeason ? `<div class="stat"><div class="k">Week</div><div class="v">${nfl.display_week || nfl.week}</div></div>` : countdown}
-    <div class="stat"><div class="k">Teams</div><div class="v">${league.total_rosters}</div></div>
-    <div class="stat"><div class="k">Open votes</div><div class="v">${open}</div></div>
+    <div class="stat"><div class="k">Teams</div><div class="v"><span data-count="${league.total_rosters}">0</span></div></div>
+    <div class="stat"><div class="k">Open votes</div><div class="v"><span data-count="${open}">0</span></div></div>
   `;
+  $("home-stats").querySelectorAll("[data-count]").forEach(countUp);
 
   const openProps = PROPOSALS.filter((p) => p.status === "open");
   $("home-ballot").innerHTML = openProps.length
@@ -1175,8 +1243,20 @@ function renderHomeAwards() {
 function renderFranchises() {
   $("home-franchises").innerHTML = [...state.users]
     .sort((a, b) => a.display_name.localeCompare(b.display_name))
-    .map((u) => `<span class="fr-pill">${avatarImg(u.avatar)}<span>${esc((u.metadata && u.metadata.team_name) || u.display_name)}</span></span>`)
+    .map((u) => `<button class="fr-pill" data-goto="owners" title="Open the owner files">${avatarImg(u.avatar)}<span>${esc((u.metadata && u.metadata.team_name) || u.display_name)}</span></button>`)
     .join("");
+}
+
+function countUp(el) {
+  const target = parseFloat(el.dataset.count);
+  if (!isFinite(target)) return;
+  const start = performance.now(), dur = 800;
+  const step = (t) => {
+    const p = Math.min(1, (t - start) / dur);
+    el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3)));
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 /* ---------------- LOTTERY ---------------- */
@@ -1254,6 +1334,111 @@ async function renderLottery() {
     $("lotto-run").textContent = "🎱 Run it again";
     lottoDrawing = false;
   };
+}
+
+/* ---------------- OWNERS ---------------- */
+async function renderOwners() {
+  $("owners-grid").innerHTML = loadingHtml("Pulling the files…");
+  try { await loadHistory(); } catch {}
+  const hist = state.history || [];
+  const latestDone = hist.find((s) => s.done && s.played);
+
+  // career aggregates per owner_id
+  const agg = {};
+  const A = (id) => agg[id] = agg[id] || { seasons: 0, w: 0, l: 0, t: 0, pf: 0, titles: 0, sackos: 0, crowns: 0, first: null };
+  for (const s of hist) {
+    if (!s.played) continue;
+    for (const row of s.standings) {
+      const a = A(row.owner_id);
+      a.seasons++; a.w += row.w; a.l += row.l; a.t += row.t; a.pf += row.pf;
+      a.first = s.season; // history is newest-first, so last write = earliest season
+    }
+    if (s.champion) A(s.champion.owner_id).titles++;
+    if (s.sacko) A(s.sacko.owner_id).sackos++;
+    if (s.pointsChamp) A(s.pointsChamp.owner_id).crowns++;
+  }
+
+  // head-to-head records (playoffs included)
+  const h2h = {};
+  const cell = (x, y) => ((h2h[x] = h2h[x] || {})[y] = h2h[x][y] || { w: 0, l: 0, t: 0 });
+  for (const g of allGames()) {
+    const a = g.a.o.owner_id, b = g.b.o.owner_id;
+    if (g.a.pts > g.b.pts) { cell(a, b).w++; cell(b, a).l++; }
+    else if (g.b.pts > g.a.pts) { cell(b, a).w++; cell(a, b).l++; }
+    else { cell(a, b).t++; cell(b, a).t++; }
+  }
+
+  // auto titles: superlatives across the league
+  const users = [...state.users].sort((a, b) => a.display_name.localeCompare(b.display_name));
+  const withStats = users.filter((u) => agg[u.user_id]);
+  const superlative = {};
+  const crownIt = (uid, title) => { if (uid && !superlative[uid]) superlative[uid] = title; };
+  if (withStats.length) {
+    const by = (f) => [...withStats].sort((a, b) => f(agg[b.user_id]) - f(agg[a.user_id]))[0].user_id;
+    const maxTitles = Math.max(...withStats.map((u) => agg[u.user_id].titles));
+    if (maxTitles >= 2) crownIt(by((a) => a.titles), "The Dynasty");
+    crownIt(by((a) => a.pf), "The Juggernaut");
+    crownIt(by((a) => (a.w + a.l ? a.w / (a.w + a.l) : 0)), "The Machine");
+    const maxSackos = Math.max(...withStats.map((u) => agg[u.user_id].sackos));
+    if (maxSackos > 0) crownIt([...withStats].sort((a, b) => agg[b.user_id].sackos - agg[a.user_id].sackos)[0].user_id, "The Cellar King");
+    crownIt(by((a) => -(a.w + a.l)), "The Wild Card");
+  }
+
+  const nameOf = (uid) => { const u = state.users.find((x) => x.user_id === uid); return u ? u.display_name : latestName(uid); };
+  $("owners-grid").innerHTML = users.map((u, i) => {
+    const a = agg[u.user_id];
+    const bio = BIOS[u.display_name.toLowerCase()] || {};
+    const isChamp = latestDone && latestDone.champion && latestDone.champion.owner_id === u.user_id;
+    const isSacko = latestDone && latestDone.sacko && latestDone.sacko.owner_id === u.user_id;
+    const badges = a ? "🏆".repeat(a.titles) + "🎯".repeat(a.crowns) + "💩".repeat(a.sackos) : "";
+    const title = bio.title || (isChamp ? "Reigning Champion" : isSacko ? "Reigning Sacko" : superlative[u.user_id] || (a ? "The Contender" : "The New Blood"));
+
+    // head-to-head vs everyone (current members only), best friend & nemesis
+    const mine = h2h[u.user_id] || {};
+    const rows = users.filter((o) => o.user_id !== u.user_id && mine[o.user_id]);
+    const diff = (r) => r.w - r.l;
+    let owns = null, ownedBy = null;
+    for (const o of rows) {
+      const r = mine[o.user_id];
+      if (r.w + r.l + r.t >= 2) {
+        if (!owns || diff(r) > diff(mine[owns])) owns = o.user_id;
+        if (!ownedBy || diff(r) < diff(mine[ownedBy])) ownedBy = o.user_id;
+      }
+    }
+    const h2hHtml = rows.length ? `
+      <div class="bio-rivals">
+        ${owns != null && diff(mine[owns]) > 0 ? `😤 Owns <b>${esc(nameOf(owns))}</b> (${mine[owns].w}-${mine[owns].l})<br>` : ""}
+        ${ownedBy != null && diff(mine[ownedBy]) < 0 ? `😱 Owned by <b>${esc(nameOf(ownedBy))}</b> (${mine[ownedBy].w}-${mine[ownedBy].l})<br>` : ""}
+        <details style="margin-top:5px"><summary style="cursor:pointer">All head-to-heads</summary>
+          ${rows.map((o) => {
+            const r = mine[o.user_id];
+            const c = r.w > r.l ? "var(--good)" : r.l > r.w ? "var(--bad)" : "var(--muted)";
+            return `<div style="display:flex;justify-content:space-between;padding:2px 0"><span>vs ${esc(nameOf(o.user_id))}</span><b style="color:${c}">${r.w}-${r.l}${r.t ? `-${r.t}` : ""}</b></div>`;
+          }).join("")}
+        </details>
+      </div>` : "";
+
+    return `<div class="bio-card" style="animation-delay:${i * 60}ms">
+      <div class="bio-head">
+        ${avatarImg(u.avatar, "avatar big")}
+        <div style="min-width:0">
+          <div class="bio-name">${esc(u.display_name)}</div>
+          <div class="owner">${esc((u.metadata && u.metadata.team_name) || "—")}</div>
+        </div>
+        <div class="bio-badges">${badges}</div>
+      </div>
+      <div class="bio-title">${esc(title)}</div>
+      ${bio.motto ? `<p class="bio-motto">“${esc(bio.motto)}”</p>` : ""}
+      ${a ? `<div class="bio-stats">
+        <div><div class="k">Seasons</div><div class="v">${a.seasons}</div></div>
+        <div><div class="k">Record</div><div class="v">${a.w}-${a.l}</div></div>
+        <div><div class="k">Win %</div><div class="v">${a.w + a.l ? Math.round((a.w / (a.w + a.l)) * 100) : 0}%</div></div>
+        <div><div class="k">PF</div><div class="v">${a.pf.toFixed(0)}</div></div>
+      </div>` : `<div class="bio-stats"><div style="grid-column:1/-1"><div class="k">Franchise history</div><div class="v" style="font-size:13px">Begins this season</div></div></div>`}
+      ${h2hHtml}
+      <div class="owner" style="margin-top:9px">Franchise est. ${esc((a && a.first) || state.league.season)}</div>
+    </div>`;
+  }).join("");
 }
 
 /* ---------------- DRAFT ---------------- */
