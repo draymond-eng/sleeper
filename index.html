@@ -409,18 +409,23 @@
 
     <div class="card" id="vote-setup-card" style="display:none">
       <h2>🔌 Turn on live voting</h2>
-      <p class="sub">One-time commish step — the league needs a shared ballot box (a tiny free JSON page, no accounts):</p>
-      <p class="sub" style="margin-top:0">
-        1. Open <a href="https://jsonblob.com" target="_blank" rel="noopener"><b>jsonblob.com</b></a> in a new tab<br>
-        2. Replace the sample text with <code>{"votes":{}}</code> and hit <b>Save</b><br>
-        3. Copy the URL from the address bar and paste it here:
-      </p>
-      <input type="text" id="store-url" placeholder="https://jsonblob.com/…" autocomplete="off" />
-      <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn gold" id="store-save">Use this ballot box</button>
-        <button class="btn" id="store-create">Try auto-create instead</button>
+      <p class="sub">One tap creates the league's shared ballot box. Then post the link it gives you in the league chat — anyone who opens it is connected automatically. That's the whole setup.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn gold" id="store-create">⚡ Create the ballot box</button>
       </div>
       <div id="store-out"></div>
+      <details style="margin-top:14px">
+        <summary style="cursor:pointer;color:var(--muted);font-size:13px">Auto-create not working? Manual route</summary>
+        <p class="sub" style="margin-top:10px">
+          1. Open <a href="https://jsonblob.com" target="_blank" rel="noopener"><b>jsonblob.com</b></a> in a new tab<br>
+          2. Replace the sample text with <code>{"votes":{}}</code> and hit <b>Save</b><br>
+          3. Copy the URL from your browser's address bar and paste it here:
+        </p>
+        <input type="text" id="store-url" placeholder="https://jsonblob.com/…" autocomplete="off" />
+        <div style="margin-top:12px">
+          <button class="btn gold" id="store-save">Use this ballot box</button>
+        </div>
+      </details>
     </div>
 
     <div class="card" id="vote-cast-card">
@@ -621,6 +626,12 @@ const PROPOSALS = [
   },
 ];
 
+/* 1b) If this year's league was created fresh on Sleeper (not "renewed"
+      from last season), Sleeper doesn't link the years — paste last
+      season's league ID here and history, the Hall, the Record Book, and
+      the Bank's look-back credits will pick it up. */
+const PREVIOUS_LEAGUE_ID = "1181277187726213120";
+
 /* 2a) Live voting ballot box — a shared JSON store URL so votes show up
       live for the whole league. One-time setup: Vote tab → "Create the
       ballot box", then paste the URL it gives you here. Until then, live
@@ -780,7 +791,10 @@ function avatarImg(avatarId, cls = "avatar", fallback = "🏈") {
 
 /* ---------------- boot ---------------- */
 function currentLeagueId() {
-  const fromUrl = new URLSearchParams(location.search).get("league");
+  const params = new URLSearchParams(location.search);
+  const box = normalizeStoreUrl(params.get("box") || "");
+  if (box) localStorage.setItem("dhq_vote_store", box);
+  const fromUrl = params.get("league");
   if (fromUrl) { localStorage.setItem("dhq_league", fromUrl); return fromUrl; }
   return localStorage.getItem("dhq_league") || DEFAULT_LEAGUE_ID || null;
 }
@@ -1002,6 +1016,8 @@ function loadHistory() {
         // cached path doesn't give us previous_league_id — fetch just the league
         try { const lg = await api(`/league/${id}`); id = lg.previous_league_id; } catch { id = null; }
       }
+      // bridge a broken chain: commish-supplied last-season league ID
+      if (hop === 0 && (!id || id === "0") && PREVIOUS_LEAGUE_ID) id = PREVIOUS_LEAGUE_ID;
       preloaded = null;
     }
     state.history = seasons;
@@ -1784,38 +1800,67 @@ $("store-save").addEventListener("click", async () => {
   localStorage.setItem("dhq_vote_store", url);
   try {
     await storeGet();
-    $("store-out").innerHTML = `
-      <div class="msg ok">Ballot box connected ✓ — live voting is on for this device right now.</div>
-      <div class="ballot-code">${esc(url)}</div>
-      <p class="sub" style="margin-top:10px">Last step so it's live for <b>everyone</b>: paste that URL into <code>VOTING.store</code> at the top of this page's source and commit — or just send it to Claude.</p>`;
     renderVote();
+    showBoxSuccess(url);
   } catch (e) {
     localStorage.removeItem("dhq_vote_store");
     setMsg("store-out", "err", `Couldn't read that ballot box (${esc(e.message)}). Double-check the URL — after you hit Save on jsonblob.com, copy what's in the address bar.`);
   }
 });
 
+function boxShareLink(url) {
+  return location.origin + location.pathname + "?box=" + encodeURIComponent(url);
+}
+function showBoxSuccess(url) {
+  const share = boxShareLink(url);
+  $("vote-out").innerHTML = `
+    <div class="msg ok">Ballot box created ✓ — live voting is ON for you right now.</div>
+    <p class="sub" style="margin:10px 0 6px">Post this link in the league chat — everyone who opens it is connected automatically:</p>
+    <div class="ballot-code" id="box-share-text">${esc(share)}</div>
+    <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn gold small" id="box-copy">Copy link</button>
+    </div>
+    <p class="sub" style="margin-top:10px">(Send it to Claude too and it gets baked into the site permanently — then even the plain link works for new people.)</p>`;
+  $("box-copy").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText($("box-share-text").textContent); $("box-copy").textContent = "Copied ✓"; } catch {}
+    setTimeout(() => { const b = $("box-copy"); if (b) b.textContent = "Copy link"; }, 1500);
+  });
+}
+
+async function createBoxExtendsClass() {
+  const r = await fetch("https://json.extendsclass.com/bin", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ votes: {} }),
+  });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const j = await r.json().catch(() => null);
+  const uri = (j && (j.uri || (j.id && "https://json.extendsclass.com/bin/" + j.id))) || null;
+  if (!uri) throw new Error("no id in response");
+  return uri;
+}
+async function createBoxJsonblob() {
+  const r = await fetch("https://jsonblob.com/api/jsonBlob", {
+    method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ votes: {} }),
+  });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  let loc = r.headers.get("Location") || r.headers.get("X-jsonblob");
+  if (!loc) throw new Error("address hidden by browser");
+  if (!/^https?:/i.test(loc)) loc = loc.startsWith("/") ? "https://jsonblob.com" + loc : "https://jsonblob.com/api/jsonBlob/" + loc;
+  return loc;
+}
+
 $("store-create").addEventListener("click", async () => {
   setMsg("store-out", "info", "Creating the ballot box…");
   try {
-    const r = await fetch("https://jsonblob.com/api/jsonBlob", {
-      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ votes: {} }),
-    });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    let loc = r.headers.get("Location") || r.headers.get("X-jsonblob");
-    if (!loc) throw new Error("couldn't read the new box's address");
-    if (!/^https?:/i.test(loc)) loc = loc.startsWith("/") ? "https://jsonblob.com" + loc : "https://jsonblob.com/api/jsonBlob/" + loc;
-    localStorage.setItem("dhq_vote_store", loc);
-    $("store-out").innerHTML = `
-      <div class="msg ok">Ballot box created ✓ — live voting is on for this device right now.</div>
-      <div class="ballot-code">${esc(loc)}</div>
-      <p class="sub" style="margin-top:10px">Last step so it's live for <b>everyone</b>: paste that URL into <code>VOTING.store</code> at the top of this page's source and commit — or just send it to Claude.</p>`;
+    let url;
+    try { url = await createBoxExtendsClass(); }
+    catch { url = await createBoxJsonblob(); }
+    localStorage.setItem("dhq_vote_store", url);
     renderVote();
+    showBoxSuccess(url);
   } catch (e) {
-    $("store-out").innerHTML = `
-      <div class="msg err">Auto-create didn't work here (${esc(e.message)}).</div>
-      <p class="sub">Manual route (30 seconds): open <a href="https://jsonblob.com" target="_blank" rel="noopener">jsonblob.com</a>, replace the sample text with <code>{"votes":{}}</code>, hit Save, copy the <b>…/api/jsonBlob/…</b> URL it shows, and paste it into <code>VOTING.store</code> in this page's source (or send it to Claude).</p>`;
+    setMsg("store-out", "err", `Auto-create didn't work (${esc(e.message)}) — use the manual route below, it always works.`);
   }
 });
 
