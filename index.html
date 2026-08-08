@@ -268,6 +268,21 @@
   .award .v{font-weight:700;font-size:14.5px;margin-top:3px}
   .award .c{color:var(--muted);font-size:12px;margin-top:2px}
 
+  /* draft night */
+  .onclock{
+    display:flex;align-items:center;gap:12px;margin:12px 0;
+    background:linear-gradient(135deg, rgba(255,206,58,.16), rgba(255,138,58,.06));
+    border:1px solid rgba(255,206,58,.5);border-radius:12px;padding:12px 16px;
+  }
+  .onclock .t{font-family:var(--display);font-size:22px;letter-spacing:1px;color:var(--accent)}
+  .live-dot{
+    display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--bad);
+    margin-right:6px;animation:pulse 1.2s ease-in-out infinite;vertical-align:1px;
+  }
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.8)}}
+  .player-row.fresh{animation:freshpick 1.6s ease}
+  @keyframes freshpick{0%{background:rgba(255,206,58,.25)}100%{background:transparent}}
+
   /* draft picks feed */
   .player-row{display:flex;align-items:center;gap:10px;padding:6px 4px;border-bottom:1px solid rgba(40,50,85,.4);font-size:13.5px}
   .player-row:last-child{border-bottom:none}
@@ -1205,10 +1220,14 @@ async function renderLottery() {
 }
 
 /* ---------------- DRAFT ---------------- */
-async function renderDraft() {
-  $("draft-info").innerHTML = "";
-  $("draft-board").innerHTML = loadingHtml("Loading the draft…");
-  $("draft-picks").innerHTML = "";
+let draftTimer = null;
+async function renderDraft(quiet) {
+  clearTimeout(draftTimer);
+  if (!quiet) {
+    $("draft-info").innerHTML = "";
+    $("draft-board").innerHTML = loadingHtml("Loading the draft…");
+    $("draft-picks").innerHTML = "";
+  }
   try {
     const drafts = await api(`/league/${state.leagueId}/drafts`);
     const draft = (drafts || [])[0];
@@ -1244,12 +1263,26 @@ async function renderDraft() {
     };
 
     const when = draft.start_time ? new Date(draft.start_time) : null;
-    const statusTxt = { pre_draft: "not started", drafting: "LIVE NOW 🔴", paused: "paused", complete: "complete" }[draft.status] || draft.status;
+    const live = draft.status === "drafting" || draft.status === "paused";
+    const soon = draft.status === "pre_draft" && when && when - Date.now() < 2 * 3600 * 1000;
+    const statusTxt = { pre_draft: "not started", drafting: "LIVE NOW", paused: "paused", complete: "complete" }[draft.status] || draft.status;
     const days = when && draft.status === "pre_draft" ? Math.ceil((when - Date.now()) / 86400000) : null;
     $("draft-info").innerHTML =
-      `${rounds} rounds · ${teams} teams · ${draft.settings.pick_timer ? Math.round(draft.settings.pick_timer / 60) + " min" : "untimed"} picks · status: <b>${esc(statusTxt)}</b>` +
+      `${rounds} rounds · ${teams} teams · ${draft.settings.pick_timer ? Math.round(draft.settings.pick_timer / 60) + " min" : "untimed"} picks · status: <b>${live ? '<span class="live-dot"></span>' : ""}${esc(statusTxt)}</b>` +
       (when ? ` · ${when.toLocaleDateString(undefined, { month: "short", day: "numeric" })}${days > 0 ? ` (in ${days} day${days > 1 ? "s" : ""})` : ""}` : "") +
-      `<br>Gold picks changed hands in trades — the board stays in sync with Sleeper automatically.`;
+      `<br>Gold picks changed hands in trades — the board stays in sync with Sleeper automatically${live || soon ? ", and this page refreshes itself while the draft is live — throw it on a TV" : ""}.`;
+
+    // on the clock
+    const totalPicks = rounds * teams;
+    const nextNo = (picks || []).length + 1;
+    if (draft.status === "drafting" && nextNo <= totalPicks) {
+      const round = Math.ceil(nextNo / teams);
+      const inRound = nextNo - (round - 1) * teams;
+      const slot = draft.type === "snake" && round % 2 === 0 ? teams - inRound + 1 : inRound;
+      const o = pickOwner(round, slot);
+      $("draft-info").innerHTML += `<div class="onclock">⏰ <span class="t">ON THE CLOCK: ${esc(o.name.toUpperCase())}</span><span class="owner">pick ${round}.${String(inRound).padStart(2, "0")}</span></div>`;
+    }
+    if (live || soon) draftTimer = setTimeout(() => { if (state.view === "draft") renderDraft(true); }, 30000);
 
     let board = `<table><thead><tr><th></th>${Array.from({ length: teams }, (_, i) => `<th class="num">${i + 1}</th>`).join("")}</tr></thead><tbody>`;
     for (let r = 1; r <= rounds; r++) {
@@ -1266,10 +1299,10 @@ async function renderDraft() {
       return;
     }
     const rows = [...picks].sort((a, b) => b.pick_no - a.pick_no);
-    $("draft-picks").innerHTML = rows.map((p) => {
+    $("draft-picks").innerHTML = rows.map((p, i) => {
       const m = p.metadata || {};
       const who = state.users.find((x) => x.user_id === p.picked_by);
-      return `<div class="player-row">
+      return `<div class="player-row${i === 0 && draft.status === "drafting" ? " fresh" : ""}">
         <span class="pp" style="color:var(--accent2)">${p.round}.${String(p.pick_no - (p.round - 1) * teams).padStart(2, "0")}</span>
         <span class="pp pos-${esc(m.position || "?")}">${esc(m.position || "?")}</span>
         <span class="pn">${esc([m.first_name, m.last_name].filter(Boolean).join(" ") || p.player_id)}</span>
