@@ -206,6 +206,7 @@
 <nav id="nav" class="hidden">
   <button class="tab active" data-view="home">Home</button>
   <button class="tab" data-view="vote">League Vote</button>
+  <button class="tab" data-view="bank">Bank</button>
   <button class="tab" data-view="records">Record Book</button>
   <button class="tab" data-view="champs">Hall of Champions</button>
   <button class="tab" data-view="rules">Constitution</button>
@@ -298,6 +299,28 @@
       <textarea id="tally-input" placeholder="Paste ballot codes here… (they look like TCB1.eyJ1Ijo…)"></textarea>
       <div style="margin-top:10px"><button class="btn gold" id="tally-go">Tally votes</button></div>
       <div id="tally-out"></div>
+    </div>
+  </section>
+
+  <!-- ============ BANK ============ -->
+  <section id="view-bank" class="hidden">
+    <div class="grid2">
+      <div class="card">
+        <h2>💵 Dues</h2>
+        <div id="dues-status" class="sub"></div>
+        <div id="dues-list"></div>
+        <p class="sub" style="margin-top:14px">Commish: mark someone paid by adding their name to the <code>BANK.paid</code> list at the top of this page's source.</p>
+      </div>
+      <div class="card">
+        <h2>🔥 Weekly High Score</h2>
+        <div id="whs-sub" class="sub"></div>
+        <div id="whs-list"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>🤑 Winnings Leaderboard</h2>
+      <p class="sub">Weekly high-score cash collected this season.</p>
+      <div id="winnings"></div>
     </div>
   </section>
 
@@ -403,14 +426,25 @@ const PROPOSALS = [
   },
 ];
 
-/* 3) The constitution. Sections of house rules shown on the Constitution
+/* 3) The bank. Dues per team, the weekly high-score bonus, and who has
+      paid. To mark someone paid, add their Sleeper display name to the
+      `paid` list (not case-sensitive) — e.g. paid: ["draymond", "mike23"].
+      Weekly high-score winners are computed automatically from scores. */
+const BANK = {
+  dues: 200,
+  weeklyHighScore: 25,
+  paid: [],
+};
+
+/* 4) The constitution. Sections of house rules shown on the Constitution
       tab. EDIT these placeholders to match your league. */
 const CONSTITUTION = [
   {
     section: "Dues & Payouts",
     items: [
-      "Buy-in: $50 per team, due before the rookie draft — EDIT ME",
-      "Payouts: 1st $350 · 2nd $100 · regular-season points leader $50 — EDIT ME",
+      "Buy-in: $200 per team, due before the draft.",
+      "Weekly high score: $25 back to the week's top scorer (regular season).",
+      "Rest of the pot: 1st / 2nd / points leader split — EDIT ME",
       "Last place hosts the draft party and wears the Sacko shirt — EDIT ME",
     ],
   },
@@ -548,11 +582,12 @@ function setMsg(id, kind, html) {
 }
 
 /* ---------------- views / tabs ---------------- */
-const VIEWS = ["setup", "home", "vote", "records", "champs", "rules", "settings"];
+const VIEWS = ["setup", "home", "vote", "bank", "records", "champs", "rules", "settings"];
 function showView(v) {
   state.view = v;
   for (const x of VIEWS) $(`view-${x}`).classList.toggle("hidden", x !== v);
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === v));
+  if (v === "bank") renderBank();
   if (v === "records") renderRecords();
   if (v === "champs") renderChamps();
 }
@@ -793,6 +828,68 @@ function renderHomeChamp() {
         <div class="owner">${esc(latest.champion.name)}${latest.runnerUp ? ` · def. ${esc(latest.runnerUp.teamName)}` : ""}</div>
       </div>
     </div>`;
+}
+
+/* ---------------- BANK ---------------- */
+async function renderBank() {
+  // dues tracker — renders instantly from league users + BANK.paid config
+  const paidSet = new Set(BANK.paid.map((n) => String(n).toLowerCase()));
+  const rows = [...state.users].sort((a, b) => a.display_name.localeCompare(b.display_name));
+  const paidCount = rows.filter((u) => paidSet.has(u.display_name.toLowerCase())).length;
+  $("dues-status").innerHTML =
+    `$${BANK.dues} per team · <b>${paidCount} of ${rows.length} paid</b> · $${paidCount * BANK.dues} of $${rows.length * BANK.dues} collected`;
+  $("dues-list").innerHTML = rows.map((u) => {
+    const paid = paidSet.has(u.display_name.toLowerCase());
+    return `<div class="record" style="padding:8px 4px">
+      ${avatarImg(u.avatar)}
+      <div style="flex:1"><b>${esc(u.display_name)}</b>${u.metadata && u.metadata.team_name ? `<div class="owner">${esc(u.metadata.team_name)}</div>` : ""}</div>
+      <span class="chip ${paid ? "passed" : "failed"}">${paid ? "✓ paid" : "unpaid"}</span>
+    </div>`;
+  }).join("");
+
+  // weekly high score — computed from this season's scores
+  $("whs-sub").textContent = `$${BANK.weeklyHighScore} to the top scorer each regular-season week — computed automatically from Sleeper scores.`;
+  $("whs-list").innerHTML = loadingHtml("Checking the scoreboards…");
+  $("winnings").innerHTML = "";
+  try { await loadHistory(); } catch (e) {
+    $("whs-list").innerHTML = `<div class="msg err">Couldn't load scores — ${esc(e.message)}</div>`;
+    return;
+  }
+  const cur = (state.history || []).find((s) => s.leagueId === state.leagueId);
+  const games = cur ? cur.games.filter((g) => !g.playoff) : [];
+  if (!games.length) {
+    $("whs-list").innerHTML = `<p class="sub" style="margin:0">No scores yet — the first $${BANK.weeklyHighScore} goes out after Week 1. 💸</p>`;
+    $("winnings").innerHTML = `<p class="sub" style="margin:0">Leaderboard starts with the season.</p>`;
+    return;
+  }
+  const weeks = [...new Set(games.map((g) => g.week))].sort((a, b) => a - b);
+  const winnings = {};   // name -> {cash, weeks}
+  const weekRows = weeks.map((wk) => {
+    const sides = games.filter((g) => g.week === wk).flatMap((g) => [g.a, g.b]);
+    const top = Math.max(...sides.map((s) => s.pts));
+    const winners = sides.filter((s) => s.pts === top);
+    const share = BANK.weeklyHighScore / winners.length;
+    for (const w of winners) {
+      const acc = winnings[w.o.name] = winnings[w.o.name] || { cash: 0, weeks: 0 };
+      acc.cash += share; acc.weeks++;
+    }
+    return `<div class="record" style="padding:8px 4px">
+      <div class="ico" style="font-size:13px;color:var(--muted)">Wk ${wk}</div>
+      <div style="flex:1"><b>${winners.map((w) => esc(w.o.name)).join(" + ")}</b>
+        <div class="owner">${top.toFixed(2)} pts${winners.length > 1 ? " · tie, pot split" : ""}</div></div>
+      <b style="color:var(--good)">$${share % 1 ? share.toFixed(2) : share}${winners.length > 1 ? " each" : ""}</b>
+    </div>`;
+  });
+  $("whs-list").innerHTML = weekRows.join("");
+
+  const board = Object.entries(winnings).sort((a, b) => b[1].cash - a[1].cash);
+  $("winnings").innerHTML = `<table>
+    <thead><tr><th>Owner</th><th class="num">Weeks won</th><th class="num">Cash</th></tr></thead>
+    <tbody>${board.map(([name, w]) => `<tr>
+      <td><b>${esc(name)}</b></td>
+      <td class="num">${w.weeks}</td>
+      <td class="num" style="color:var(--good)">$${w.cash % 1 ? w.cash.toFixed(2) : w.cash}</td>
+    </tr>`).join("")}</tbody></table>`;
 }
 
 /* ---------------- RECORD BOOK ---------------- */
