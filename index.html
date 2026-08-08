@@ -118,6 +118,9 @@
   .chip.open{background:rgba(58,160,255,.15);color:var(--accent2);border:1px solid rgba(58,160,255,.4)}
   .chip.passed{background:rgba(57,217,138,.13);color:var(--good);border:1px solid rgba(57,217,138,.4)}
   .chip.failed{background:rgba(255,93,108,.13);color:var(--bad);border:1px solid rgba(255,93,108,.4)}
+  button.chip{cursor:pointer;font-family:inherit;transition:filter .12s ease}
+  button.chip:hover{filter:brightness(1.35)}
+  button.chip:disabled{opacity:.5;cursor:wait}
 
   input[type=text],textarea,select{
     width:100%;background:var(--bg2);border:1px solid var(--line);color:var(--text);
@@ -470,6 +473,7 @@
     <div class="grid2">
       <div class="card">
         <h2>💵 Dues</h2>
+        <div class="onclock" style="margin-top:0">💸 <span class="t" id="bank-payto"></span></div>
         <div id="dues-status" class="sub"></div>
         <div id="dues-list"></div>
         <p class="sub" style="margin-top:14px">Commish: mark someone paid by adding their name to the <code>BANK.paid</code> list at the top of this page's source.</p>
@@ -636,7 +640,7 @@ const PREVIOUS_LEAGUE_ID = "1181277187726213120";
       live for the whole league. One-time setup: Vote tab → "Create the
       ballot box", then paste the URL it gives you here. Until then, live
       voting runs per-device only. */
-const VOTING = { store: "" };
+const VOTING = { store: "https://jsonblob.com/api/jsonBlob/019fe16b-32a4-70bc-99cd-54d15ae29e79" };
 
 /* 2b) The rookie draft lottery (Article IV). Odds for the non-playoff
       teams, worst record first. Renormalized automatically if the lottery
@@ -650,6 +654,7 @@ const LOTTERY = { weights: [35, 25, 20, 12, 8] };
 const BANK = {
   dues: 200,
   weeklyHighScore: 25,
+  payTo: "Zelle: 301-213-2762",
   paid: [],
 };
 
@@ -1381,6 +1386,7 @@ function weekRowsHtml(sum) {
 }
 
 async function renderBank() {
+  $("bank-payto").textContent = BANK.payTo || "";
   $("dues-list").innerHTML = loadingHtml("Balancing the books…");
   $("whs-list").innerHTML = "";
   $("winnings").innerHTML = "";
@@ -1393,29 +1399,56 @@ async function renderBank() {
   const curCredits = seasonHighCredits(cur);
   const prevCredits = seasonHighCredits(prev);
 
-  // the ledger: dues minus every weekly-high credit (last season's weeks 1-14 + this season so far)
+  // paid status lives in the shared ballot box (tap to toggle); BANK.paid config still counts as paid
+  let bankDoc = null;
+  if (voteStore()) bankDoc = await storeGet().catch(() => null);
+  const storePaid = (bankDoc && bankDoc.paid) || {};
   const paidSet = new Set(BANK.paid.map((n) => String(n).toLowerCase()));
+  const isPaid = (u) => paidSet.has(u.display_name.toLowerCase()) || !!storePaid[u.user_id];
+
   const rows = [...state.users].sort((a, b) => a.display_name.localeCompare(b.display_name));
-  const paidCount = rows.filter((u) => paidSet.has(u.display_name.toLowerCase())).length;
+  const paidCount = rows.filter(isPaid).length;
   const money = (x) => `$${x % 1 ? x.toFixed(2) : x}`;
+  const canToggle = !!voteStore();
   $("dues-status").innerHTML =
     `$${BANK.dues} per team · every weekly high score auto-credits $${BANK.weeklyHighScore}` +
-    `${prev ? ` (last season's included)` : ""} · <b>${paidCount} of ${rows.length} settled</b>`;
+    `${prev ? ` (last season's included)` : ""} · <b>${paidCount} of ${rows.length} settled</b>` +
+    (canToggle ? `<br>Tap a status to mark someone paid — it updates for the whole league.` : "");
   $("dues-list").innerHTML = `<table>
     <thead><tr><th>Owner</th><th class="num">Dues</th><th class="num">HS credits</th><th class="num">Owes</th><th class="num">Status</th></tr></thead>
     <tbody>${rows.map((u) => {
       const credit = (prevCredits[u.user_id] ? prevCredits[u.user_id].cash : 0) + (curCredits[u.user_id] ? curCredits[u.user_id].cash : 0);
       const net = BANK.dues - credit;
-      const paid = paidSet.has(u.display_name.toLowerCase());
+      const paid = isPaid(u);
+      const chip = `class="chip ${paid ? "passed" : "failed"}"`;
       return `<tr>
         <td><b>${esc(u.display_name)}</b>${u.metadata && u.metadata.team_name ? `<div class="owner">${esc(u.metadata.team_name)}</div>` : ""}</td>
         <td class="num">$${BANK.dues}</td>
         <td class="num" style="color:var(--good)">${credit ? "−" + money(credit) : "—"}</td>
         <td class="num"><b>${net >= 0 ? money(net) : `<span style="color:var(--good)">+${money(-net)} back</span>`}</b></td>
-        <td class="num"><span class="chip ${paid ? "passed" : "failed"}">${paid ? "✓ settled" : "open"}</span></td>
+        <td class="num">${canToggle
+          ? `<button ${chip} data-uid="${esc(u.user_id)}" title="Tap to toggle">${paid ? "✓ settled" : "open"}</button>`
+          : `<span ${chip}>${paid ? "✓ settled" : "open"}</span>`}</td>
       </tr>`;
     }).join("")}</tbody></table>
     ${prev ? `<p class="sub" style="margin-top:10px">HS credits = $${BANK.weeklyHighScore} × weekly high scores won (last season weeks 1–14${cur && cur.games.length ? " + this season so far" : ""}).</p>` : ""}`;
+
+  $("dues-list").querySelectorAll("button.chip[data-uid]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      try {
+        const doc = await storeGet().catch(() => ({ votes: {} }));
+        doc.paid = doc.paid || {};
+        const uid = b.dataset.uid;
+        if (doc.paid[uid]) delete doc.paid[uid];
+        else doc.paid[uid] = { ts: Date.now() };
+        await storePut(doc);
+        renderBank();
+      } catch (e) {
+        setMsg("global-msg", "err", `Couldn't save the paid status — ${esc(e.message)}. Try again in a second.`);
+        b.disabled = false;
+      }
+    }));
 
   // weekly high score detail
   if (cur && cur.games.filter((g) => !g.playoff).length) {
