@@ -685,11 +685,17 @@ const PROPOSALS = [
   },
 ];
 
-/* 1b) If this year's league was created fresh on Sleeper (not "renewed"
-      from last season), Sleeper doesn't link the years — paste last
-      season's league ID here and history, the Hall, the Record Book, and
-      the Bank's look-back credits will pick it up. */
-const PREVIOUS_LEAGUE_ID = "1181277187726213120";
+/* 1b) If a season's league was created fresh on Sleeper (not "renewed"
+      from the year before), Sleeper doesn't link the years. List the
+      missing league IDs here, newest first — whenever the chain breaks,
+      the next one bridges it, and history, the Hall, the Record Book, and
+      the Bank's look-back credits all pick it up. */
+const PREVIOUS_LEAGUE_IDS = [
+  "1181277187726213120",   // 2025
+  "1049060617212039168",   // 2024
+  "921174563684270080",    // 2023
+  "853783968326225920",    // 2022
+];
 
 /* 2a) Live voting ballot box — a shared JSON store URL so votes show up
       live for the whole league. One-time setup: Vote tab → "Create the
@@ -1088,8 +1094,11 @@ function loadHistory() {
         // cached path doesn't give us previous_league_id — fetch just the league
         try { const lg = await api(`/league/${id}`); id = lg.previous_league_id; } catch { id = null; }
       }
-      // bridge a broken chain: commish-supplied last-season league ID
-      if (hop === 0 && (!id || id === "0") && PREVIOUS_LEAGUE_ID) id = PREVIOUS_LEAGUE_ID;
+      // bridge broken chains with commish-supplied league IDs (skip any already walked)
+      if (!id || id === "0") {
+        const seen = new Set(seasons.map((s) => String(s.leagueId)));
+        id = PREVIOUS_LEAGUE_IDS.find((x) => x && !seen.has(String(x))) || null;
+      }
       preloaded = null;
     }
     state.history = seasons;
@@ -1393,6 +1402,22 @@ async function renderOwners() {
     const badges = a ? "🏆".repeat(a.titles) + "🎯".repeat(a.crowns) + "💩".repeat(a.sackos) : "";
     const title = bio.title || (isChamp ? "Reigning Champion" : isSacko ? "Reigning Sacko" : superlative[u.user_id] || (a ? "The Contender" : "The New Blood"));
 
+    // auto trash talk when no custom motto
+    let smack = "";
+    if (!bio.motto && a) {
+      const winPct = a.w + a.l ? a.w / (a.w + a.l) : 0;
+      if (isChamp) smack = `Won it all in ${latestDone.season}. Hasn't shut up since.`;
+      else if (isSacko) smack = `Dead last in ${latestDone.season}. Owes the champ a jersey and the league an apology.`;
+      else if (a.titles >= 2) smack = `${a.titles} rings. The villain this league needed.`;
+      else if (a.titles === 1) smack = `Got a ring once. Brings it up weekly.`;
+      else if (a.crowns > 0) smack = `Scores the most points, wins the least hardware.`;
+      else if (a.sackos > 0) smack = `Has worn the Sacko ${a.sackos > 1 ? a.sackos + " times" : "once"}. Nobody's forgotten.`;
+      else if (winPct >= 0.6) smack = `Wins constantly, somehow still no banner.`;
+      else if (winPct <= 0.35) smack = `Year ${a.seasons} of the rebuild. The blueprint remains unclear.`;
+      else smack = `Aggressively .500 — the most dangerous team in the league, allegedly.`;
+    }
+    const motto = bio.motto || smack;
+
     // head-to-head vs everyone (current members only), best friend & nemesis
     const mine = h2h[u.user_id] || {};
     const rows = users.filter((o) => o.user_id !== u.user_id && mine[o.user_id]);
@@ -1428,7 +1453,7 @@ async function renderOwners() {
         <div class="bio-badges">${badges}</div>
       </div>
       <div class="bio-title">${esc(title)}</div>
-      ${bio.motto ? `<p class="bio-motto">“${esc(bio.motto)}”</p>` : ""}
+      ${motto ? `<p class="bio-motto">“${esc(motto)}”</p>` : ""}
       ${a ? `<div class="bio-stats">
         <div><div class="k">Seasons</div><div class="v">${a.seasons}</div></div>
         <div><div class="k">Record</div><div class="v">${a.w}-${a.l}</div></div>
