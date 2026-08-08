@@ -245,6 +245,41 @@
 
   footer{color:var(--muted);font-size:12px;text-align:center;padding:24px;border-top:1px solid var(--line)}
 
+  /* home extras */
+  .franchise-strip{display:flex;flex-wrap:wrap;gap:8px}
+  .fr-pill{
+    display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel2);
+    border-radius:22px;padding:5px 13px 5px 6px;font-size:12.5px;font-weight:600;
+    transition:transform .12s ease,border-color .12s ease;
+  }
+  .fr-pill:hover{transform:translateY(-2px);border-color:var(--accent2)}
+  .fr-pill img,.fr-pill .avatar{width:26px;height:26px;border-radius:50%}
+  .hero-kick .big{font-family:var(--display);font-size:44px;letter-spacing:1px;line-height:1;color:var(--accent)}
+  .hero-kick .big small{font-size:18px;color:var(--text);letter-spacing:2px}
+  .awards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+  .award{
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;
+    border-left:4px solid var(--accent2);
+  }
+  .award.gold{border-left-color:var(--accent)}
+  .award.red{border-left-color:var(--bad)}
+  .award.green{border-left-color:var(--good)}
+  .award .k{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:1px}
+  .award .v{font-weight:700;font-size:14.5px;margin-top:3px}
+  .award .c{color:var(--muted);font-size:12px;margin-top:2px}
+
+  /* lottery */
+  .lotto-pick{
+    display:flex;align-items:center;gap:14px;padding:10px 12px;margin-top:10px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:12px;
+    animation:pickin .5s ease;
+  }
+  @keyframes pickin{from{transform:translateY(14px) scale(.96);opacity:0}to{transform:none;opacity:1}}
+  .lotto-pick .num{font-family:var(--display);font-size:26px;color:var(--accent2);width:58px;flex:none}
+  .lotto-pick.first{border-color:var(--accent);background:rgba(255,206,58,.1);box-shadow:0 0 24px rgba(255,206,58,.15)}
+  .lotto-pick.first .num{color:var(--accent)}
+  .lotto-spin{font-family:var(--display);font-size:22px;letter-spacing:1px;color:var(--muted);padding:14px 4px}
+
   /* add-to-home-screen banner */
   #a2hs{
     position:fixed;left:12px;right:12px;bottom:12px;z-index:50;
@@ -288,6 +323,7 @@
   <button class="tab active" data-view="home">Home</button>
   <button class="tab" data-view="vote">League Vote</button>
   <button class="tab" data-view="bank">Bank</button>
+  <button class="tab" data-view="lottery">Lottery</button>
   <button class="tab" data-view="records">Record Book</button>
   <button class="tab" data-view="champs">Hall of Champions</button>
   <button class="tab" data-view="rules">Constitution</button>
@@ -313,7 +349,12 @@
   <section id="view-home" class="hidden">
     <div id="home-champ"></div>
     <div id="home-sacko"></div>
+    <div id="home-awards"></div>
     <div class="stats" id="home-stats"></div>
+    <div class="card" id="home-franchises-card">
+      <h2>The Franchises</h2>
+      <div class="franchise-strip" id="home-franchises"></div>
+    </div>
     <div class="grid2">
       <div class="card">
         <h2>🗳 On the Ballot</h2>
@@ -403,6 +444,21 @@
       <h2>🤑 Winnings Leaderboard</h2>
       <p class="sub">Weekly high-score cash collected this season.</p>
       <div id="winnings"></div>
+    </div>
+  </section>
+
+  <!-- ============ LOTTERY ============ -->
+  <section id="view-lottery" class="hidden">
+    <div class="card">
+      <h2>🎰 Rookie Draft Lottery</h2>
+      <p class="sub">Per Article IV: the non-playoff teams draw for the top picks — worse record, better odds. Playoff teams pick after, in reverse playoff finish; the champ always picks last. Run it live in front of the league.</p>
+      <div id="lotto-status"></div>
+      <div id="lotto-odds"></div>
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn gold" id="lotto-run">🎱 Run the lottery</button>
+        <span class="owner" id="lotto-note"></span>
+      </div>
+      <div id="lotto-stage"></div>
     </div>
   </section>
 
@@ -516,6 +572,11 @@ const PROPOSALS = [
     status: "open",
   },
 ];
+
+/* 2b) The rookie draft lottery (Article IV). Odds for the non-playoff
+      teams, worst record first. Renormalized automatically if the lottery
+      has fewer teams. */
+const LOTTERY = { weights: [35, 25, 20, 12, 8] };
 
 /* 3) The bank. Dues per team, the weekly high-score bonus, and who has
       paid. To mark someone paid, add their Sleeper display name to the
@@ -690,6 +751,7 @@ async function boot() {
     $("nav").classList.remove("hidden");
     $("settings-league-id").textContent = state.leagueId;
     renderHome();
+    renderFranchises();
     renderVote();
     renderRules();
     loadHistory().then(() => { renderHomeChamp(); });   // fills in the champ banner when ready
@@ -707,12 +769,13 @@ function setMsg(id, kind, html) {
 }
 
 /* ---------------- views / tabs ---------------- */
-const VIEWS = ["setup", "home", "vote", "bank", "records", "champs", "rules", "settings"];
+const VIEWS = ["setup", "home", "vote", "bank", "lottery", "records", "champs", "rules", "settings"];
 function showView(v) {
   state.view = v;
   for (const x of VIEWS) $(`view-${x}`).classList.toggle("hidden", x !== v);
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === v));
   if (v === "bank") renderBank();
+  if (v === "lottery") renderLottery();
   if (v === "records") renderRecords();
   if (v === "champs") renderChamps();
 }
@@ -978,15 +1041,24 @@ function renderHomeSacko() {
 
 function renderHomeChamp() {
   renderHomeSacko();
+  renderHomeAwards();
   const latest = (state.history || []).find((s) => s.champion);
   if (!latest) {
+    const days = state.nfl && state.nfl.season_start_date
+      ? Math.ceil((new Date(state.nfl.season_start_date) - Date.now()) / 86400000) : 0;
     $("home-champ").innerHTML = `
-      <div class="hero-champ">
+      <div class="hero-champ hero-kick">
         <div class="cup">🏆</div>
-        <div>
-          <div class="tag">The throne is empty</div>
-          <div class="who">First banner gets hung this season</div>
-          <div class="owner">Win it all and your name lives here forever.</div>
+        <div style="flex:1">
+          <div class="tag">Season ${esc(state.league.season)} · the throne is empty</div>
+          ${days > 0
+            ? `<div class="big">${days} <small>DAYS TO KICKOFF</small></div>`
+            : `<div class="big">FIRST BANNER <small>GETS HUNG THIS SEASON</small></div>`}
+          <div class="owner" style="margin-top:6px">Win it all and your jersey hangs in the rafters forever. Lose it all and… see below.</div>
+          <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn gold small" data-goto="vote">🗳 Vote on the rules</button>
+            <button class="btn small" data-goto="lottery">🎰 Try the draft lottery</button>
+          </div>
         </div>
       </div>`;
     return;
@@ -1001,6 +1073,111 @@ function renderHomeChamp() {
         <div class="owner">${esc(latest.champion.name)}${latest.runnerUp ? ` · def. ${esc(latest.runnerUp.teamName)}` : ""}</div>
       </div>
     </div>`;
+}
+
+function renderHomeAwards() {
+  const cur = (state.history || []).find((s) => s.leagueId === state.leagueId);
+  const games = cur ? cur.games : [];
+  if (!games.length) { $("home-awards").innerHTML = ""; return; }
+  const wk = Math.max(...games.map((g) => g.week));
+  const wg = games.filter((g) => g.week === wk);
+  const sides = wg.flatMap((g) => [{ ...g.a, opp: g.b }, { ...g.b, opp: g.a }]);
+  const boom = sides.reduce((m, s) => (s.pts > m.pts ? s : m));
+  const stink = sides.reduce((m, s) => (s.pts < m.pts ? s : m));
+  const decided = wg.filter((g) => g.a.pts !== g.b.pts);
+  const massacre = decided.length ? decided.reduce((m, g) => (Math.abs(g.a.pts - g.b.pts) > Math.abs(m.a.pts - m.b.pts) ? g : m)) : null;
+  const escape = decided.length ? decided.reduce((m, g) => (Math.abs(g.a.pts - g.b.pts) < Math.abs(m.a.pts - m.b.pts) ? g : m)) : null;
+  const W = (g) => (g.a.pts > g.b.pts ? g.a : g.b), L = (g) => (g.a.pts > g.b.pts ? g.b : g.a);
+  $("home-awards").innerHTML = `<div class="awards">
+    <div class="award gold"><div class="k">💥 Boom of Week ${wk}</div><div class="v">${esc(boom.o.name)}</div><div class="c">${boom.pts.toFixed(2)} pts</div></div>
+    <div class="award red"><div class="k">🗑 The Stinker</div><div class="v">${esc(stink.o.name)}</div><div class="c">${stink.pts.toFixed(2)} pts</div></div>
+    ${massacre ? `<div class="award"><div class="k">🔪 The Massacre</div><div class="v">${esc(W(massacre).o.name)} over ${esc(L(massacre).o.name)}</div><div class="c">by ${Math.abs(massacre.a.pts - massacre.b.pts).toFixed(2)}</div></div>` : ""}
+    ${escape ? `<div class="award green"><div class="k">😮‍💨 The Escape</div><div class="v">${esc(W(escape).o.name)} past ${esc(L(escape).o.name)}</div><div class="c">by ${Math.abs(escape.a.pts - escape.b.pts).toFixed(2)}</div></div>` : ""}
+  </div>`;
+}
+
+function renderFranchises() {
+  $("home-franchises").innerHTML = [...state.users]
+    .sort((a, b) => a.display_name.localeCompare(b.display_name))
+    .map((u) => `<span class="fr-pill">${avatarImg(u.avatar)}<span>${esc((u.metadata && u.metadata.team_name) || u.display_name)}</span></span>`)
+    .join("");
+}
+
+/* ---------------- LOTTERY ---------------- */
+function weightedDrawOrder(teams, weights) {
+  const pool = teams.map((t, i) => ({ t, w: weights[i] || 1 }));
+  const order = [];
+  while (pool.length) {
+    const total = pool.reduce((s, x) => s + x.w, 0);
+    let r = Math.random() * total;
+    let idx = pool.findIndex((x) => (r -= x.w) < 0);
+    if (idx < 0) idx = pool.length - 1;
+    order.push(pool.splice(idx, 1)[0].t);
+  }
+  return order;   // order[0] gets pick 1.01
+}
+
+let lottoDrawing = false;
+async function renderLottery() {
+  $("lotto-odds").innerHTML = loadingHtml("Setting the odds…");
+  try { await loadHistory(); } catch {}
+  const league = state.league;
+  const playoffTeams = (league.settings && league.settings.playoff_teams) || 7;
+  const n = Math.max(2, Math.min(LOTTERY.weights.length, (league.total_rosters || 12) - playoffTeams));
+
+  const cur = (state.history || []).find((s) => s.leagueId === state.leagueId);
+  let entrants, official = false;
+  if (cur && cur.played) {
+    const bottom = cur.standings.slice(-n);
+    entrants = [...bottom].reverse().map((x) => ({ name: x.name, rec: `${x.w}-${x.l}` }));
+    official = cur.done;
+    setMsg("lotto-status", official ? "ok" : "info", official
+      ? "Final standings are in — this is the real drawing."
+      : `Standings through today — an unofficial preview until the season ends.`);
+  } else {
+    entrants = state.users.slice(0, n).map((u) => ({ name: u.display_name, rec: "—" }));
+    setMsg("lotto-status", "info", "No standings yet — demo mode with placeholder seeding. The real drawing uses final standings, worst record first.");
+  }
+
+  const w = LOTTERY.weights.slice(0, entrants.length);
+  const totalW = w.reduce((s, x) => s + x, 0);
+  $("lotto-odds").innerHTML = `<table>
+    <thead><tr><th>Seed</th><th>Team</th><th class="num">Record</th><th class="num">Odds at 1.01</th></tr></thead>
+    <tbody>${entrants.map((e, i) => `<tr>
+      <td style="color:var(--muted)">${i + 1}</td>
+      <td><b>${esc(e.name)}</b></td>
+      <td class="num">${esc(e.rec)}</td>
+      <td class="num" style="color:var(--accent)">${((w[i] / totalW) * 100).toFixed(0)}%</td>
+    </tr>`).join("")}</tbody></table>`;
+  $("lotto-note").textContent = official ? "Results are official when the commish says so." : "Practice runs don't count. Obviously.";
+
+  $("lotto-run").onclick = async () => {
+    if (lottoDrawing) return;
+    lottoDrawing = true;
+    $("lotto-run").disabled = true;
+    const order = weightedDrawOrder(entrants, w);
+    const stage = $("lotto-stage");
+    stage.innerHTML = "";
+    for (let pick = order.length; pick >= 1; pick--) {
+      const spin = document.createElement("div");
+      spin.className = "lotto-spin";
+      stage.prepend(spin);
+      for (let f = 0; f < 10; f++) {
+        spin.textContent = `PICK 1.${String(pick).padStart(2, "0")} … ${entrants[Math.floor(Math.random() * entrants.length)].name.toUpperCase()}`;
+        await new Promise((r) => setTimeout(r, 90 + f * 18));
+      }
+      const team = order[pick - 1];
+      spin.outerHTML = `<div class="lotto-pick ${pick === 1 ? "first" : ""}">
+        <span class="num">1.${String(pick).padStart(2, "0")}</span>
+        <b style="flex:1">${pick === 1 ? "🎉 " : ""}${esc(team.name)}</b>
+        <span class="owner">${esc(team.rec)}</span>
+      </div>`;
+      await new Promise((r) => setTimeout(r, 450));
+    }
+    $("lotto-run").disabled = false;
+    $("lotto-run").textContent = "🎱 Run it again";
+    lottoDrawing = false;
+  };
 }
 
 /* ---------------- BANK ---------------- */
