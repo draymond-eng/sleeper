@@ -1390,21 +1390,7 @@ async function renderOwners() {
     const badges = a ? "🏆".repeat(a.titles) + "🎯".repeat(a.crowns) + "💩".repeat(a.sackos) : "";
     const title = bio.title || (isChamp ? "Reigning Champion" : isSacko ? "Reigning Sacko" : superlative[u.user_id] || (a ? "The Contender" : "The New Blood"));
 
-    // auto trash talk when no custom motto
-    let smack = "";
-    if (!bio.motto && a) {
-      const winPct = a.w + a.l ? a.w / (a.w + a.l) : 0;
-      if (isChamp) smack = `Won it all in ${latestDone.season}. Hasn't shut up since.`;
-      else if (isSacko) smack = `Dead last in ${latestDone.season}. Owes the champ a jersey and the league an apology.`;
-      else if (a.titles >= 2) smack = `${a.titles} rings. The villain this league needed.`;
-      else if (a.titles === 1) smack = `Got a ring once. Brings it up weekly.`;
-      else if (a.crowns > 0) smack = `Scores the most points, wins the least hardware.`;
-      else if (a.sackos > 0) smack = `Has worn the Sacko ${a.sackos > 1 ? a.sackos + " times" : "once"}. Nobody's forgotten.`;
-      else if (winPct >= 0.6) smack = `Wins constantly, somehow still no banner.`;
-      else if (winPct <= 0.35) smack = `Year ${a.seasons} of the rebuild. The blueprint remains unclear.`;
-      else smack = `Aggressively .500 — the most dangerous team in the league, allegedly.`;
-    }
-    const motto = bio.motto || smack;
+    const motto = bio.motto || "";
 
     // head-to-head vs everyone (current members only), best friend & nemesis
     const mine = h2h[u.user_id] || {};
@@ -2157,6 +2143,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
     : `In Chrome: tap <span class="kbd">⋮</span> then <span class="kbd">Add to Home screen</span> — it becomes an app icon.`;
   setTimeout(() => {
     $("a2hs").classList.remove("hidden");
+    localStorage.setItem("dhq_a2hs", "1");   // one showing, ever — installed or not
     if (installEvent) {
       $("a2hs-install").classList.remove("hidden");
       $("a2hs-steps").textContent = "One tap and it lives on your home screen like an app.";
