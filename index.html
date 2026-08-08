@@ -436,39 +436,73 @@ const BANK = {
   paid: [],
 };
 
-/* 4) The constitution. Sections of house rules shown on the Constitution
-      tab. EDIT these placeholders to match your league. */
+/* 4) The bylaws, shown on the Constitution tab. */
 const CONSTITUTION = [
   {
-    section: "Dues & Payouts",
+    section: "Article I — The League",
     items: [
-      "Buy-in: $200 per team, due before the draft.",
-      "Weekly high score: $25 back to the week's top scorer (regular season).",
-      "Rest of the pot: 1st / 2nd / points leader split — EDIT ME",
-      "Last place hosts the draft party and wears the Sacko shirt — EDIT ME",
+      "A 12-team dynasty league played on Sleeper. Rosters, scoring, and waivers are whatever the Sleeper league settings say — these bylaws cover everything Sleeper can't enforce.",
+      "This site is the league's official record: the ballot, the bank, the banners, and these bylaws.",
     ],
   },
   {
-    section: "Rosters & Taxi",
+    section: "Article II — Dues & Payouts",
     items: [
-      "Roster: 25 players + 3 taxi + 2 IR — EDIT ME",
-      "Taxi: rookies and 2nd-year players only; locked after Week 1 kickoff — EDIT ME",
+      "Dues are $200 per team per season, due before the rookie draft. You can't make draft picks or waiver claims until you've paid.",
+      "Total pot: $2,400.",
+      "Weekly high score: $25 to the top scorer each regular-season week (Weeks 1–14, $350 total). A tie for the week splits the $25.",
+      "Championship payouts: 1st place $1,200 · 2nd place $550 · Regular-season points leader (most points for, Weeks 1–14) $300.",
+      "Dues are non-refundable once the rookie draft starts.",
     ],
   },
   {
-    section: "Trades & Waivers",
+    section: "Article III — Season & Playoffs",
     items: [
-      "Trades process instantly; vetoes per the current voted rule — EDIT ME",
-      "FAAB: $100 budget, runs Wednesday mornings — EDIT ME",
-      "Future draft picks tradeable up to 2 years out — EDIT ME",
+      "Regular season: Weeks 1–14. Standings tiebreaker: total points for.",
+      "Playoffs: 7 teams, Weeks 15–17, one week per round. The #1 seed gets a first-round bye.",
+      "Week 15: seeds 2–7 play (2v7, 3v6, 4v5). Week 16: semifinals, highest remaining seed hosts lowest. Week 17: championship.",
+      "Every team must field a full, legal starting lineup every week of the season — playoff teams and eliminated teams alike. Repeated no-shows or obvious bench-tanking is a commissioner matter.",
     ],
   },
   {
-    section: "Rule Changes",
+    section: "Article IV — Rookie Draft & Lottery",
     items: [
-      "Anyone can propose a rule change (Vote tab → Make a Proposal).",
-      "Offseason votes pass by simple majority unless flagged otherwise on the ballot.",
-      "Mid-season rule changes require unanimous consent — EDIT ME",
+      "Draft order for the 5 non-playoff teams is set by weighted lottery — worse record, better odds. The lottery is run live in front of the league.",
+      "Playoff teams pick 6th through 12th in reverse order of playoff finish; the champion always picks 12th.",
+      "Future rookie picks may be traded up to two drafts ahead.",
+    ],
+  },
+  {
+    section: "Article V — Trades",
+    items: [
+      "Trades process instantly. There are no vetoes for 'bad' trades — bad trades are how dynasties are built and lost.",
+      "The commissioner may reverse a trade only for proven collusion (two owners conspiring to benefit one team unfairly). That's the only takeback.",
+      "In-season trade deadline: end of Week 14 (the last regular-season week). Trading reopens for everyone once the championship is decided.",
+    ],
+  },
+  {
+    section: "Article VI — The Sacko",
+    items: [
+      "The Sacko is the team with the worst regular-season record (tiebreaker: fewest points for).",
+      "The Sacko buys the league champion a jersey of the champion's choosing, presented at the next draft.",
+      "The Sacko's name hangs on the Hall of Champions banner. Forever.",
+    ],
+  },
+  {
+    section: "Article VII — Rule Changes",
+    items: [
+      "Anyone can propose a rule change — Vote tab → Make a Proposal.",
+      "Offseason changes pass by simple majority (7 of 12). A tied vote fails — the status quo stands.",
+      "In-season changes require unanimous consent. Teams were built under the current rules; the rules don't move mid-year without everyone on board.",
+      "Passed changes are written into these bylaws and take effect the following league year unless the vote says otherwise.",
+    ],
+  },
+  {
+    section: "Article VIII — Membership",
+    items: [
+      "Leaving the league? Give notice by the end of the season so a replacement owner can take over the roster. Help find your replacement — it's your franchise.",
+      "Replacement owners inherit the full roster and picks. The league votes on any new member; majority approves.",
+      "The commissioner runs the league day-to-day but is bound by these bylaws like everyone else.",
     ],
   },
 ];
