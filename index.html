@@ -400,28 +400,13 @@ const DEFAULT_LEAGUE_ID = "1315074404622815232";
       - pass:    fraction of Yes (among Yes+No) needed to pass — 0.5 = simple
                  majority, 0.67 = two-thirds. Only used for Yes/No questions.
       - status:  "open" while voting, then flip to "passed" or "failed"
-      These first three are EXAMPLES — replace them with your league's real
-      proposals. */
+      */
 const PROPOSALS = [
   {
-    id: "2026-taxi-5",
-    title: "Expand taxi squads from 3 to 5 spots",
-    details: "More room to stash rookies without burning bench spots. Taxi rules otherwise unchanged (rookies/2nd-year only, locked after Week 1).",
+    id: "2026-qb-6pt-passing-td",
+    title: "Make passing TDs worth 6 points",
+    details: "Score all passing touchdowns at 6 points — same as rushing and receiving TDs. Big boost to QB value across the league. If it passes, the scoring change takes effect for the 2026 season.",
     pass: 0.5,
-    status: "open",
-  },
-  {
-    id: "2026-faab-blind",
-    title: "Make FAAB bids blind until waivers process",
-    details: "Currently bids are visible; this would hide all bids until Wednesday processing to stop bid-sniping.",
-    pass: 0.5,
-    status: "open",
-  },
-  {
-    id: "2026-vetoes",
-    title: "How should trade vetoes work?",
-    details: "Pick the system you want for the 2026 season.",
-    options: ["Commish veto only", "League vote (majority)", "No vetoes at all"],
     status: "open",
   },
 ];
