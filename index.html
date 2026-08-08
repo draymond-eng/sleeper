@@ -713,6 +713,10 @@ const BANK = {
   weeklyHighScore: 25,
   payTo: "Zelle: 301-213-2762",
   paid: [],
+  /* last season's weekly highs credit this year's dues only until the
+     rookie draft completes — then the ledger resets and this season's
+     highs start fresh. Set false to drop last-season credits early. */
+  creditLastSeason: true,
 };
 
 /* 3b) Owner bios — optional flavor for the Owners page, keyed by Sleeper
@@ -1579,7 +1583,16 @@ async function renderBank() {
     return;
   }
   const cur = (state.history || []).find((s) => s.leagueId === state.leagueId);
-  const prev = (state.history || []).find((s) => s.leagueId !== state.leagueId && s.played);
+  let prev = (state.history || []).find((s) => s.leagueId !== state.leagueId && s.played);
+
+  // last-season credits expire when this year's draft completes (dues settle at the draft)
+  let draftDone = false;
+  try {
+    const drafts = await api(`/league/${state.leagueId}/drafts`);
+    draftDone = !!(drafts && drafts[0] && drafts[0].status === "complete");
+  } catch {}
+  if (draftDone || BANK.creditLastSeason === false) prev = null;
+
   const curCredits = seasonHighCredits(cur);
   const prevCredits = seasonHighCredits(prev);
 
@@ -1597,7 +1610,8 @@ async function renderBank() {
   $("dues-status").innerHTML =
     `$${BANK.dues} per team · every weekly high score auto-credits $${BANK.weeklyHighScore}` +
     `${prev ? ` (last season's included)` : ""} · <b>${paidCount} of ${rows.length} settled</b>` +
-    (canToggle ? `<br>Tap a status to mark someone paid — it updates for the whole league.` : "");
+    (canToggle ? `<br>Tap a status to mark someone paid — it updates for the whole league.` : "") +
+    (draftDone ? `<br>🔄 Ledger reset at the draft — last season is settled, this season's highs credit from Week 1.` : "");
   $("dues-list").innerHTML = `<table>
     <thead><tr><th>Owner</th><th class="num">Dues</th><th class="num">HS credits</th><th class="num">Owes</th><th class="num">Status</th></tr></thead>
     <tbody>${rows.map((u) => {
