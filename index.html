@@ -331,7 +331,7 @@
 
 <header>
   <div class="brand">
-    <div class="logo" id="league-logo">🏈</div>
+    <div class="logo" id="league-logo"><img src="icon.svg" alt="MoCo Fantasy Football" /></div>
     <div class="title">
       <h1 id="site-title">League HQ</h1>
       <p id="site-sub">Trophies · Records · Votes</p>
@@ -403,24 +403,34 @@
   <section id="view-vote" class="hidden">
     <div class="card">
       <h2>Rule Changes on the Ballot</h2>
-      <p class="sub">
-        Cast your ballot below, then paste your ballot code in the league chat.
-        The commish pastes everyone's codes into the tally tool for official results —
-        votes are public in the chat, so everything is verifiable.
-      </p>
+      <p class="sub">Voting is live and public — pick your name, make your calls, hit submit. The board below updates for the whole league.</p>
       <div id="prop-list"></div>
     </div>
 
-    <div class="card">
-      <h2>🗳 Cast Your Ballot</h2>
+    <div class="card" id="vote-setup-card" style="display:none">
+      <h2>🔌 Turn on live voting</h2>
+      <p class="sub">One-time commish step: the league needs a shared ballot box (a tiny free JSON store — no accounts, nothing to install).</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn gold" id="store-create">Create the ballot box</button>
+      </div>
+      <div id="store-out"></div>
+    </div>
+
+    <div class="card" id="vote-cast-card">
+      <h2>🗳 Cast Your Vote</h2>
       <label>Who are you?</label>
       <select id="ballot-who"></select>
       <div id="ballot-props"></div>
-      <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn gold" id="ballot-gen">Generate ballot code</button>
-        <button class="btn hidden" id="ballot-copy">Copy code</button>
+      <div style="margin-top:14px">
+        <button class="btn gold" id="vote-submit">Submit my votes</button>
       </div>
-      <div id="ballot-out"></div>
+      <div id="vote-out"></div>
+    </div>
+
+    <div class="card">
+      <h2>📊 Live Results</h2>
+      <p class="sub">Public roll call — everyone sees who voted for what. Updates automatically.</p>
+      <div id="live-results"></div>
     </div>
 
     <div class="card">
@@ -441,13 +451,6 @@
       <div id="prop-out"></div>
     </div>
 
-    <div class="card">
-      <h2>🧮 Commissioner Tally</h2>
-      <p class="sub">Paste the league chat (or just everyone's ballot codes) below. Duplicate ballots from the same person count once — the newest wins.</p>
-      <textarea id="tally-input" placeholder="Paste ballot codes here… (they look like TCB1.eyJ1Ijo…)"></textarea>
-      <div style="margin-top:10px"><button class="btn gold" id="tally-go">Tally votes</button></div>
-      <div id="tally-out"></div>
-    </div>
   </section>
 
   <!-- ============ BANK ============ -->
@@ -610,6 +613,12 @@ const PROPOSALS = [
     status: "open",
   },
 ];
+
+/* 2a) Live voting ballot box — a shared JSON store URL so votes show up
+      live for the whole league. One-time setup: Vote tab → "Create the
+      ballot box", then paste the URL it gives you here. Until then, live
+      voting runs per-device only. */
+const VOTING = { store: "" };
 
 /* 2b) The rookie draft lottery (Article IV). Odds for the non-playoff
       teams, worst record first. Renormalized automatically if the lottery
@@ -784,7 +793,6 @@ async function boot() {
     Object.assign(state, { nfl, league, users, rosters });
     $("site-title").textContent = league.name || "League HQ";
     $("site-sub").textContent = `${league.season} · ${league.total_rosters} teams · Trophies · Records · Votes`;
-    if (league.avatar) $("league-logo").innerHTML = `<img src="${esc(CDN + league.avatar)}" alt="">`;
     $("btn-sleeper").href = `https://sleeper.com/leagues/${state.leagueId}`;
     $("nav").classList.remove("hidden");
     $("settings-league-id").textContent = state.leagueId;
@@ -812,6 +820,7 @@ function showView(v) {
   state.view = v;
   for (const x of VIEWS) $(`view-${x}`).classList.toggle("hidden", x !== v);
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === v));
+  if (v === "vote") renderVote();
   if (v === "bank") renderBank();
   if (v === "lottery") renderLottery();
   if (v === "draft") renderDraft();
@@ -1577,10 +1586,21 @@ function renderVote() {
     state.users.map((u) => `<option value="${esc(u.user_id)}">${esc(u.display_name)}${u.metadata && u.metadata.team_name ? ` (${esc(u.metadata.team_name)})` : ""}</option>`).join("");
   $("ballot-who").innerHTML = userOpts;
   $("prop-who").innerHTML = userOpts;
+  const me = localStorage.getItem("dhq_me");
+  if (me && state.users.some((u) => u.user_id === me)) $("ballot-who").value = me;
+
+  const hasStore = !!voteStore();
+  $("vote-setup-card").style.display = hasStore ? "none" : "";
+  $("vote-cast-card").style.display = hasStore && open.length ? "" : "none";
+  if (!hasStore) {
+    $("live-results").innerHTML = `<p class="sub" style="margin:0">Live voting isn't switched on yet — commish, hit the card above and it's a 30-second job.</p>`;
+  } else {
+    refreshLive().catch((e) => { $("live-results").innerHTML = `<div class="msg err">Couldn't reach the ballot box — ${esc(e.message)}</div>`; });
+    startLivePolling();
+  }
 
   if (!open.length) {
     $("ballot-props").innerHTML = `<p class="sub" style="margin-top:12px">No open proposals to vote on.</p>`;
-    $("ballot-gen").disabled = true;
   } else {
     $("ballot-props").innerHTML = open.map((p) => `
       <div class="prop" data-prop="${esc(p.id)}">
@@ -1599,32 +1619,134 @@ function renderVote() {
   }
 }
 
-$("ballot-gen").addEventListener("click", () => {
+/* --- live voting: shared ballot box --- */
+function voteStore() { return (VOTING.store || localStorage.getItem("dhq_vote_store") || "").trim(); }
+async function storeGet() {
+  const r = await fetch(voteStore(), { headers: { Accept: "application/json" } });
+  if (!r.ok) throw new Error(`ballot box ${r.status}`);
+  const j = await r.json().catch(() => null);
+  return j && typeof j === "object" && j.votes && typeof j.votes === "object" ? j : { votes: {} };
+}
+async function storePut(doc) {
+  const r = await fetch(voteStore(), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(doc) });
+  if (!r.ok) throw new Error(`ballot box ${r.status}`);
+}
+
+let liveTimer = null;
+function startLivePolling() {
+  clearInterval(liveTimer);
+  liveTimer = setInterval(() => {
+    if (state.view === "vote" && document.visibilityState === "visible" && voteStore())
+      refreshLive().catch(() => {});
+  }, 20000);
+}
+async function refreshLive() { renderLiveResults(await storeGet()); }
+
+function renderLiveResults(doc) {
+  const open = PROPOSALS.filter((p) => p.status === "open");
+  const entries = Object.entries(doc.votes || {});
+  const nameOf = (uid) => {
+    const u = state.users.find((x) => x.user_id === uid);
+    return u ? u.display_name : ((doc.votes[uid] && doc.votes[uid].name) || "?");
+  };
+  if (!entries.length) {
+    $("live-results").innerHTML = `<p class="sub" style="margin:0">No votes yet — be the first on the board. 🗳</p>`;
+    return;
+  }
+  const votedIds = new Set(entries.map(([uid]) => uid));
+  const waiting = state.users.filter((u) => !votedIds.has(u.user_id));
+
+  const sections = open.map((p) => {
+    const opts = propOptions(p);
+    const byOpt = Object.fromEntries(opts.map((o) => [o, []]));
+    const abstained = [];
+    for (const [uid, rec] of entries) {
+      const c = rec && rec.v ? rec.v[p.id] : null;
+      if (c === "__abstain") abstained.push(nameOf(uid));
+      else if (c != null && byOpt[c]) byOpt[c].push(nameOf(uid));
+    }
+    const totalCast = opts.reduce((s, o) => s + byOpt[o].length, 0);
+    let verdict = "";
+    if (!p.options) {
+      const need = p.pass || 0.5;
+      const yes = byOpt["Yes"] ? byOpt["Yes"].length : 0;
+      const no = byOpt["No"] ? byOpt["No"].length : 0;
+      const yesFrac = totalCast ? yes / totalCast : 0;
+      const passing = totalCast > 0 && yesFrac > need - 1e-9 && (need !== 0.5 || yes > no);
+      verdict = totalCast
+        ? `<span class="chip ${passing ? "passed" : "failed"}">${passing ? "passing" : "not passing"}</span> <span class="owner">${Math.round(yesFrac * 100)}% yes, needs ${need === 0.5 ? "a majority" : Math.round(need * 100) + "%"}</span>`
+        : `<span class="owner">no votes cast</span>`;
+    } else {
+      const max = Math.max(...opts.map((o) => byOpt[o].length));
+      const leaders = opts.filter((o) => byOpt[o].length === max && max > 0);
+      verdict = leaders.length === 1 ? `<span class="chip passed">leading: ${esc(leaders[0])}</span>`
+        : max > 0 ? `<span class="chip open">tied</span>` : `<span class="owner">no votes cast</span>`;
+    }
+    return `<div class="prop">
+      <h3 style="font-size:14px">${esc(p.title)} ${verdict}</h3>
+      ${opts.map((o) => `<div class="tally-row">
+        <div class="lbl"><span>${esc(o)}</span><span>${byOpt[o].length}</span></div>
+        <div class="bar ${o === "Yes" ? "yes" : ""}"><div style="width:${totalCast ? (byOpt[o].length / totalCast) * 100 : 0}%"></div></div>
+        ${byOpt[o].length ? `<div class="owner">${byOpt[o].map(esc).join(", ")}</div>` : ""}
+      </div>`).join("")}
+      ${abstained.length ? `<div class="owner">Abstained: ${abstained.map(esc).join(", ")}</div>` : ""}
+    </div>`;
+  }).join("");
+
+  $("live-results").innerHTML = `
+    <div class="msg ok">${entries.length} of ${state.users.length} in: ${entries.map(([uid]) => esc(nameOf(uid))).join(", ")}</div>
+    ${waiting.length ? `<div class="msg info">Still waiting on: ${waiting.map((u) => esc(u.display_name)).join(", ")}</div>` : `<div class="msg ok">Everyone has voted. 🎉</div>`}
+    ${sections}`;
+}
+
+$("vote-submit").addEventListener("click", async () => {
   const who = $("ballot-who").value;
-  if (!who) { $("ballot-out").innerHTML = `<div class="msg err">Pick your name first.</div>`; return; }
-  const votes = {};
+  if (!who) { setMsg("vote-out", "err", "Pick your name first."); return; }
+  const v = {};
   let missing = 0;
   $("ballot-props").querySelectorAll(".prop").forEach((el) => {
     const sel = el.querySelector(".vote-opt.sel");
     if (!sel) { missing++; return; }
-    if (sel.dataset.opt !== "__abstain") votes[el.dataset.prop] = sel.dataset.opt;
+    v[el.dataset.prop] = sel.dataset.opt;
   });
-  if (missing) { $("ballot-out").innerHTML = `<div class="msg err">You have ${missing} unanswered proposal${missing > 1 ? "s" : ""} — pick an option (or Abstain) on each.</div>`; return; }
-  const payload = { u: who, ts: Date.now(), v: votes };
-  const code = "TCB1." + btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  if (missing) { setMsg("vote-out", "err", `You have ${missing} unanswered proposal${missing > 1 ? "s" : ""} — pick an option (or Abstain) on each.`); return; }
   const user = state.users.find((x) => x.user_id === who);
-  $("ballot-out").innerHTML = `
-    <div class="msg ok">Ballot ready for <b>${esc(user ? user.display_name : who)}</b> — copy it and paste it in the league chat.</div>
-    <div class="ballot-code" id="ballot-code-text">${esc(code)}</div>`;
-  $("ballot-copy").classList.remove("hidden");
+  $("vote-submit").disabled = true;
+  try {
+    const doc = await storeGet().catch(() => ({ votes: {} }));
+    doc.votes[who] = { name: user ? user.display_name : who, ts: Date.now(), v };
+    await storePut(doc);
+    localStorage.setItem("dhq_me", who);
+    setMsg("vote-out", "ok", `Locked in ✓ — you're on the board, <b>${esc(user ? user.display_name : "friend")}</b>. Change your mind? Vote again and it updates.`);
+    renderLiveResults(doc);
+  } catch (e) {
+    setMsg("vote-out", "err", `Couldn't reach the ballot box — ${esc(e.message)}. Try again in a second.`);
+  }
+  $("vote-submit").disabled = false;
 });
 
-$("ballot-copy").addEventListener("click", async () => {
-  const el = $("ballot-code-text");
-  if (!el) return;
-  try { await navigator.clipboard.writeText(el.textContent); $("ballot-copy").textContent = "Copied ✓"; } catch {}
-  setTimeout(() => { $("ballot-copy").textContent = "Copy code"; }, 1500);
+$("store-create").addEventListener("click", async () => {
+  setMsg("store-out", "info", "Creating the ballot box…");
+  try {
+    const r = await fetch("https://jsonblob.com/api/jsonBlob", {
+      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ votes: {} }),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    let loc = r.headers.get("Location") || r.headers.get("X-jsonblob");
+    if (!loc) throw new Error("couldn't read the new box's address");
+    if (!/^https?:/i.test(loc)) loc = loc.startsWith("/") ? "https://jsonblob.com" + loc : "https://jsonblob.com/api/jsonBlob/" + loc;
+    localStorage.setItem("dhq_vote_store", loc);
+    $("store-out").innerHTML = `
+      <div class="msg ok">Ballot box created ✓ — live voting is on for this device right now.</div>
+      <div class="ballot-code">${esc(loc)}</div>
+      <p class="sub" style="margin-top:10px">Last step so it's live for <b>everyone</b>: paste that URL into <code>VOTING.store</code> at the top of this page's source and commit — or just send it to Claude.</p>`;
+    renderVote();
+  } catch (e) {
+    $("store-out").innerHTML = `
+      <div class="msg err">Auto-create didn't work here (${esc(e.message)}).</div>
+      <p class="sub">Manual route (30 seconds): open <a href="https://jsonblob.com" target="_blank" rel="noopener">jsonblob.com</a>, replace the sample text with <code>{"votes":{}}</code>, hit Save, copy the <b>…/api/jsonBlob/…</b> URL it shows, and paste it into <code>VOTING.store</code> in this page's source (or send it to Claude).</p>`;
+  }
 });
 
 /* proposal builder */
@@ -1665,75 +1787,6 @@ $("prop-copy").addEventListener("click", async () => {
   if (!el) return;
   try { await navigator.clipboard.writeText(el.textContent); $("prop-copy").textContent = "Copied ✓"; } catch {}
   setTimeout(() => { $("prop-copy").textContent = "Copy for the chat"; }, 1500);
-});
-
-/* tally */
-function decodeBallot(code) {
-  try {
-    const b64 = code.slice(5).replace(/-/g, "+").replace(/_/g, "/");
-    const json = decodeURIComponent(escape(atob(b64 + "=".repeat((4 - b64.length % 4) % 4))));
-    const p = JSON.parse(json);
-    if (!p || typeof p.u !== "string" || typeof p.v !== "object") return null;
-    return p;
-  } catch { return null; }
-}
-
-$("tally-go").addEventListener("click", () => {
-  const text = $("tally-input").value;
-  const codes = text.match(/TCB1\.[A-Za-z0-9_-]+/g) || [];
-  const ballots = codes.map(decodeBallot).filter(Boolean);
-  if (!ballots.length) { $("tally-out").innerHTML = `<div class="msg err">No valid ballot codes found in that text.</div>`; return; }
-
-  const byUser = {};
-  for (const b of ballots) if (!byUser[b.u] || (b.ts || 0) > (byUser[b.u].ts || 0)) byUser[b.u] = b;
-  const finalBallots = Object.values(byUser);
-  const userName = (uid) => {
-    const u = state.users.find((x) => x.user_id === uid);
-    return u ? u.display_name : `Unknown (${uid.slice(0, 6)}…)`;
-  };
-  const voted = new Set(finalBallots.map((b) => b.u));
-  const notVoted = state.users.filter((u) => !voted.has(u.user_id));
-
-  const open = PROPOSALS.filter((p) => p.status === "open");
-  const sections = open.map((p) => {
-    const opts = propOptions(p);
-    const counts = Object.fromEntries(opts.map((o) => [o, 0]));
-    let abstain = 0;
-    for (const b of finalBallots) {
-      const v = b.v[p.id];
-      if (v == null) abstain++;
-      else if (v in counts) counts[v]++;
-    }
-    const totalCast = opts.reduce((s, o) => s + counts[o], 0);
-    let verdict = "";
-    if (!p.options) {
-      const need = p.pass || 0.5;
-      const yesFrac = totalCast ? counts["Yes"] / totalCast : 0;
-      const passing = totalCast > 0 && yesFrac > need - 1e-9 && (need !== 0.5 || counts["Yes"] > counts["No"]);
-      verdict = totalCast
-        ? `<span class="chip ${passing ? "passed" : "failed"}">${passing ? "passing" : "not passing"}</span> <span class="owner">${Math.round(yesFrac * 100)}% yes, needs ${need === 0.5 ? "a majority" : Math.round(need * 100) + "%"}</span>`
-        : `<span class="owner">no votes cast</span>`;
-    } else {
-      const max = Math.max(...opts.map((o) => counts[o]));
-      const leaders = opts.filter((o) => counts[o] === max && max > 0);
-      verdict = leaders.length === 1 ? `<span class="chip passed">leading: ${esc(leaders[0])}</span>`
-        : max > 0 ? `<span class="chip open">tied</span>` : `<span class="owner">no votes cast</span>`;
-    }
-    return `<div class="prop">
-      <h3 style="font-size:14px">${esc(p.title)} ${verdict}</h3>
-      ${opts.map((o) => `<div class="tally-row">
-        <div class="lbl"><span>${esc(o)}</span><span>${counts[o]}</span></div>
-        <div class="bar ${o === "Yes" ? "yes" : ""}"><div style="width:${totalCast ? (counts[o] / totalCast) * 100 : 0}%"></div></div>
-      </div>`).join("")}
-      ${abstain ? `<div class="owner">Abstained/skipped: ${abstain}</div>` : ""}
-    </div>`;
-  }).join("");
-
-  $("tally-out").innerHTML = `
-    <div class="msg ok">${finalBallots.length} ballot${finalBallots.length > 1 ? "s" : ""} counted:
-      ${finalBallots.map((b) => esc(userName(b.u))).join(", ")}</div>
-    ${notVoted.length ? `<div class="msg info">Still waiting on: ${notVoted.map((u) => esc(u.display_name)).join(", ")}</div>` : `<div class="msg ok">Everyone has voted. 🎉</div>`}
-    ${sections}`;
 });
 
 /* ---------------- add-to-home-screen nudge (first visit, mobile only) ---------------- */
