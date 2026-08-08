@@ -409,9 +409,16 @@
 
     <div class="card" id="vote-setup-card" style="display:none">
       <h2>🔌 Turn on live voting</h2>
-      <p class="sub">One-time commish step: the league needs a shared ballot box (a tiny free JSON store — no accounts, nothing to install).</p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn gold" id="store-create">Create the ballot box</button>
+      <p class="sub">One-time commish step — the league needs a shared ballot box (a tiny free JSON page, no accounts):</p>
+      <p class="sub" style="margin-top:0">
+        1. Open <a href="https://jsonblob.com" target="_blank" rel="noopener"><b>jsonblob.com</b></a> in a new tab<br>
+        2. Replace the sample text with <code>{"votes":{}}</code> and hit <b>Save</b><br>
+        3. Copy the URL from the address bar and paste it here:
+      </p>
+      <input type="text" id="store-url" placeholder="https://jsonblob.com/…" autocomplete="off" />
+      <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn gold" id="store-save">Use this ballot box</button>
+        <button class="btn" id="store-create">Try auto-create instead</button>
       </div>
       <div id="store-out"></div>
     </div>
@@ -1324,65 +1331,103 @@ async function renderDraft(quiet) {
 }
 
 /* ---------------- BANK ---------------- */
-async function renderBank() {
-  // dues tracker — renders instantly from league users + BANK.paid config
-  const paidSet = new Set(BANK.paid.map((n) => String(n).toLowerCase()));
-  const rows = [...state.users].sort((a, b) => a.display_name.localeCompare(b.display_name));
-  const paidCount = rows.filter((u) => paidSet.has(u.display_name.toLowerCase())).length;
-  $("dues-status").innerHTML =
-    `$${BANK.dues} per team · <b>${paidCount} of ${rows.length} paid</b> · $${paidCount * BANK.dues} of $${rows.length * BANK.dues} collected`;
-  $("dues-list").innerHTML = rows.map((u) => {
-    const paid = paidSet.has(u.display_name.toLowerCase());
-    return `<div class="record" style="padding:8px 4px">
-      ${avatarImg(u.avatar)}
-      <div style="flex:1"><b>${esc(u.display_name)}</b>${u.metadata && u.metadata.team_name ? `<div class="owner">${esc(u.metadata.team_name)}</div>` : ""}</div>
-      <span class="chip ${paid ? "passed" : "failed"}">${paid ? "✓ paid" : "unpaid"}</span>
-    </div>`;
-  }).join("");
-
-  // weekly high score — computed from this season's scores
-  $("whs-sub").textContent = `$${BANK.weeklyHighScore} to the top scorer each regular-season week — computed automatically from Sleeper scores.`;
-  $("whs-list").innerHTML = loadingHtml("Checking the scoreboards…");
-  $("winnings").innerHTML = "";
-  try { await loadHistory(); } catch (e) {
-    $("whs-list").innerHTML = `<div class="msg err">Couldn't load scores — ${esc(e.message)}</div>`;
-    return;
-  }
-  const cur = (state.history || []).find((s) => s.leagueId === state.leagueId);
-  const games = cur ? cur.games.filter((g) => !g.playoff) : [];
-  if (!games.length) {
-    $("whs-list").innerHTML = `<p class="sub" style="margin:0">No scores yet — the first $${BANK.weeklyHighScore} goes out after Week 1. 💸</p>`;
-    $("winnings").innerHTML = `<p class="sub" style="margin:0">Leaderboard starts with the season.</p>`;
-    return;
-  }
-  const weeks = [...new Set(games.map((g) => g.week))].sort((a, b) => a - b);
-  const winnings = {};   // name -> {cash, weeks}
-  const weekRows = weeks.map((wk) => {
+/* weekly high-score credits for one season: owner_id -> {weeks, cash} (regular season only) */
+function seasonHighCredits(sum) {
+  const credits = {};
+  if (!sum) return credits;
+  const games = sum.games.filter((g) => !g.playoff);
+  for (const wk of [...new Set(games.map((g) => g.week))]) {
     const sides = games.filter((g) => g.week === wk).flatMap((g) => [g.a, g.b]);
     const top = Math.max(...sides.map((s) => s.pts));
     const winners = sides.filter((s) => s.pts === top);
     const share = BANK.weeklyHighScore / winners.length;
     for (const w of winners) {
-      const acc = winnings[w.o.name] = winnings[w.o.name] || { cash: 0, weeks: 0 };
-      acc.cash += share; acc.weeks++;
+      const c = credits[w.o.owner_id] = credits[w.o.owner_id] || { weeks: 0, cash: 0, name: w.o.name };
+      c.weeks++; c.cash += share;
     }
+  }
+  return credits;
+}
+function weekRowsHtml(sum) {
+  const games = sum.games.filter((g) => !g.playoff);
+  return [...new Set(games.map((g) => g.week))].sort((a, b) => a - b).map((wk) => {
+    const sides = games.filter((g) => g.week === wk).flatMap((g) => [g.a, g.b]);
+    const top = Math.max(...sides.map((s) => s.pts));
+    const winners = sides.filter((s) => s.pts === top);
+    const share = BANK.weeklyHighScore / winners.length;
     return `<div class="record" style="padding:8px 4px">
       <div class="ico" style="font-size:13px;color:var(--muted)">Wk ${wk}</div>
       <div style="flex:1"><b>${winners.map((w) => esc(w.o.name)).join(" + ")}</b>
         <div class="owner">${top.toFixed(2)} pts${winners.length > 1 ? " · tie, pot split" : ""}</div></div>
       <b style="color:var(--good)">$${share % 1 ? share.toFixed(2) : share}${winners.length > 1 ? " each" : ""}</b>
     </div>`;
-  });
-  $("whs-list").innerHTML = weekRows.join("");
+  }).join("");
+}
 
-  const board = Object.entries(winnings).sort((a, b) => b[1].cash - a[1].cash);
-  $("winnings").innerHTML = `<table>
-    <thead><tr><th>Owner</th><th class="num">Weeks won</th><th class="num">Cash</th></tr></thead>
-    <tbody>${board.map(([name, w]) => `<tr>
-      <td><b>${esc(name)}</b></td>
+async function renderBank() {
+  $("dues-list").innerHTML = loadingHtml("Balancing the books…");
+  $("whs-list").innerHTML = "";
+  $("winnings").innerHTML = "";
+  try { await loadHistory(); } catch (e) {
+    $("dues-list").innerHTML = `<div class="msg err">Couldn't load scores — ${esc(e.message)}</div>`;
+    return;
+  }
+  const cur = (state.history || []).find((s) => s.leagueId === state.leagueId);
+  const prev = (state.history || []).find((s) => s.leagueId !== state.leagueId && s.played);
+  const curCredits = seasonHighCredits(cur);
+  const prevCredits = seasonHighCredits(prev);
+
+  // the ledger: dues minus every weekly-high credit (last season's weeks 1-14 + this season so far)
+  const paidSet = new Set(BANK.paid.map((n) => String(n).toLowerCase()));
+  const rows = [...state.users].sort((a, b) => a.display_name.localeCompare(b.display_name));
+  const paidCount = rows.filter((u) => paidSet.has(u.display_name.toLowerCase())).length;
+  const money = (x) => `$${x % 1 ? x.toFixed(2) : x}`;
+  $("dues-status").innerHTML =
+    `$${BANK.dues} per team · every weekly high score auto-credits $${BANK.weeklyHighScore}` +
+    `${prev ? ` (last season's included)` : ""} · <b>${paidCount} of ${rows.length} settled</b>`;
+  $("dues-list").innerHTML = `<table>
+    <thead><tr><th>Owner</th><th class="num">Dues</th><th class="num">HS credits</th><th class="num">Owes</th><th class="num">Status</th></tr></thead>
+    <tbody>${rows.map((u) => {
+      const credit = (prevCredits[u.user_id] ? prevCredits[u.user_id].cash : 0) + (curCredits[u.user_id] ? curCredits[u.user_id].cash : 0);
+      const net = BANK.dues - credit;
+      const paid = paidSet.has(u.display_name.toLowerCase());
+      return `<tr>
+        <td><b>${esc(u.display_name)}</b>${u.metadata && u.metadata.team_name ? `<div class="owner">${esc(u.metadata.team_name)}</div>` : ""}</td>
+        <td class="num">$${BANK.dues}</td>
+        <td class="num" style="color:var(--good)">${credit ? "−" + money(credit) : "—"}</td>
+        <td class="num"><b>${net >= 0 ? money(net) : `<span style="color:var(--good)">+${money(-net)} back</span>`}</b></td>
+        <td class="num"><span class="chip ${paid ? "passed" : "failed"}">${paid ? "✓ settled" : "open"}</span></td>
+      </tr>`;
+    }).join("")}</tbody></table>
+    ${prev ? `<p class="sub" style="margin-top:10px">HS credits = $${BANK.weeklyHighScore} × weekly high scores won (last season weeks 1–14${cur && cur.games.length ? " + this season so far" : ""}).</p>` : ""}`;
+
+  // weekly high score detail
+  if (cur && cur.games.filter((g) => !g.playoff).length) {
+    $("whs-sub").textContent = `$${BANK.weeklyHighScore} to the top scorer each regular-season week — auto-credited to the ledger.`;
+    $("whs-list").innerHTML = weekRowsHtml(cur);
+  } else if (prev) {
+    $("whs-sub").textContent = `Last season's winners, weeks 1–14 — already credited against this year's dues. This season's board starts Week 1.`;
+    $("whs-list").innerHTML = weekRowsHtml(prev);
+  } else {
+    $("whs-sub").textContent = `$${BANK.weeklyHighScore} to the top scorer each regular-season week — computed automatically from Sleeper scores.`;
+    $("whs-list").innerHTML = `<p class="sub" style="margin:0">No scores yet — the first $${BANK.weeklyHighScore} goes out after Week 1. 💸</p>`;
+  }
+
+  // winnings leaderboard across both credited seasons
+  const totals = {};
+  for (const credits of [prevCredits, curCredits])
+    for (const [uid, c] of Object.entries(credits)) {
+      const t = totals[uid] = totals[uid] || { name: c.name, weeks: 0, cash: 0 };
+      t.weeks += c.weeks; t.cash += c.cash;
+    }
+  const board = Object.values(totals).sort((a, b) => b.cash - a.cash);
+  $("winnings").innerHTML = board.length ? `<table>
+    <thead><tr><th>Owner</th><th class="num">Weeks won</th><th class="num">Credited</th></tr></thead>
+    <tbody>${board.map((w) => `<tr>
+      <td><b>${esc(w.name)}</b></td>
       <td class="num">${w.weeks}</td>
-      <td class="num" style="color:var(--good)">$${w.cash % 1 ? w.cash.toFixed(2) : w.cash}</td>
-    </tr>`).join("")}</tbody></table>`;
+      <td class="num" style="color:var(--good)">${money(w.cash)}</td>
+    </tr>`).join("")}</tbody></table>` : `<p class="sub" style="margin:0">Leaderboard starts with the season.</p>`;
 }
 
 /* ---------------- RECORD BOOK ---------------- */
@@ -1620,7 +1665,13 @@ function renderVote() {
 }
 
 /* --- live voting: shared ballot box --- */
-function voteStore() { return (VOTING.store || localStorage.getItem("dhq_vote_store") || "").trim(); }
+function normalizeStoreUrl(u) {
+  u = String(u || "").trim();
+  const m = u.match(/jsonblob\.com\/(?:api\/jsonBlob\/)?([A-Za-z0-9-]{8,})/i);
+  if (m) return `https://jsonblob.com/api/jsonBlob/${m[1]}`;
+  return /^https?:\/\//i.test(u) ? u : "";
+}
+function voteStore() { return normalizeStoreUrl(VOTING.store || localStorage.getItem("dhq_vote_store") || ""); }
 async function storeGet() {
   const r = await fetch(voteStore(), { headers: { Accept: "application/json" } });
   if (!r.ok) throw new Error(`ballot box ${r.status}`);
@@ -1723,6 +1774,25 @@ $("vote-submit").addEventListener("click", async () => {
     setMsg("vote-out", "err", `Couldn't reach the ballot box — ${esc(e.message)}. Try again in a second.`);
   }
   $("vote-submit").disabled = false;
+});
+
+$("store-save").addEventListener("click", async () => {
+  const raw = $("store-url").value;
+  const url = normalizeStoreUrl(raw);
+  if (!url) { setMsg("store-out", "err", "That doesn't look like a URL — paste the address from your browser's address bar after you hit Save on jsonblob.com."); return; }
+  setMsg("store-out", "info", "Checking the ballot box…");
+  localStorage.setItem("dhq_vote_store", url);
+  try {
+    await storeGet();
+    $("store-out").innerHTML = `
+      <div class="msg ok">Ballot box connected ✓ — live voting is on for this device right now.</div>
+      <div class="ballot-code">${esc(url)}</div>
+      <p class="sub" style="margin-top:10px">Last step so it's live for <b>everyone</b>: paste that URL into <code>VOTING.store</code> at the top of this page's source and commit — or just send it to Claude.</p>`;
+    renderVote();
+  } catch (e) {
+    localStorage.removeItem("dhq_vote_store");
+    setMsg("store-out", "err", `Couldn't read that ballot box (${esc(e.message)}). Double-check the URL — after you hit Save on jsonblob.com, copy what's in the address bar.`);
+  }
 });
 
 $("store-create").addEventListener("click", async () => {
