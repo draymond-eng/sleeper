@@ -4,6 +4,12 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>League HQ</title>
+<meta name="theme-color" content="#0a0e1a" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<link rel="manifest" href="manifest.webmanifest" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
@@ -238,6 +244,28 @@
   }
 
   footer{color:var(--muted);font-size:12px;text-align:center;padding:24px;border-top:1px solid var(--line)}
+
+  /* add-to-home-screen banner */
+  #a2hs{
+    position:fixed;left:12px;right:12px;bottom:12px;z-index:50;
+    background:linear-gradient(180deg,#1e2850,var(--panel));border:1px solid #3a4a8a;border-radius:16px;
+    padding:14px 16px;box-shadow:0 14px 40px rgba(0,0,0,.6);
+    display:flex;align-items:center;gap:13px;max-width:520px;margin:0 auto;
+    animation:a2hs-up .45s ease;
+  }
+  @keyframes a2hs-up{from{transform:translateY(120%);opacity:0}to{transform:none;opacity:1}}
+  #a2hs img{width:44px;height:44px;border-radius:11px;flex:none}
+  #a2hs .txt{flex:1;font-size:13px;line-height:1.5}
+  #a2hs .txt b{font-size:13.5px}
+  #a2hs .steps{color:var(--muted);font-size:12.5px}
+  #a2hs .steps .kbd{
+    display:inline-block;border:1px solid var(--line);background:var(--bg2);border-radius:6px;
+    padding:0 6px;font-size:12px;
+  }
+  #a2hs button.x{
+    border:none;background:transparent;color:var(--muted);font-size:20px;line-height:1;
+    padding:4px 6px;flex:none;align-self:flex-start;
+  }
 </style>
 </head>
 <body>
@@ -437,6 +465,16 @@
 <footer>
   Built for the league · Data from the <a href="https://docs.sleeper.com" target="_blank" rel="noopener">Sleeper API</a> · Not affiliated with Sleeper
 </footer>
+
+<div id="a2hs" class="hidden">
+  <img src="icon-180.png" alt="" />
+  <div class="txt">
+    <b>Put the league in your pocket 🏈</b>
+    <div class="steps" id="a2hs-steps"></div>
+  </div>
+  <button class="btn gold small hidden" id="a2hs-install">Install</button>
+  <button class="x" id="a2hs-close" aria-label="Dismiss">✕</button>
+</div>
 
 <script>
 /* =====================================================================
@@ -1386,6 +1424,43 @@ $("tally-go").addEventListener("click", () => {
     ${notVoted.length ? `<div class="msg info">Still waiting on: ${notVoted.map((u) => esc(u.display_name)).join(", ")}</div>` : `<div class="msg ok">Everyone has voted. 🎉</div>`}
     ${sections}`;
 });
+
+/* ---------------- add-to-home-screen nudge (first visit, mobile only) ---------------- */
+let installEvent = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installEvent = e;
+  const b = $("a2hs");
+  if (b && !b.classList.contains("hidden")) {
+    $("a2hs-install").classList.remove("hidden");
+    $("a2hs-steps").textContent = "One tap and it lives on your home screen like an app.";
+  }
+});
+(function a2hsNudge() {
+  const ua = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/.test(ua);
+  const isAndroid = /Android/.test(ua);
+  const standalone = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+  if (localStorage.getItem("dhq_a2hs") || standalone || (!isIOS && !isAndroid)) return;
+  $("a2hs-steps").innerHTML = isIOS
+    ? `In Safari: tap <span class="kbd">Share&nbsp;⎋</span> then <span class="kbd">Add to Home Screen&nbsp;➕</span> — it becomes an app icon.`
+    : `In Chrome: tap <span class="kbd">⋮</span> then <span class="kbd">Add to Home screen</span> — it becomes an app icon.`;
+  setTimeout(() => {
+    $("a2hs").classList.remove("hidden");
+    if (installEvent) {
+      $("a2hs-install").classList.remove("hidden");
+      $("a2hs-steps").textContent = "One tap and it lives on your home screen like an app.";
+    }
+  }, 1600);
+  const dismiss = () => { $("a2hs").classList.add("hidden"); localStorage.setItem("dhq_a2hs", "1"); };
+  $("a2hs-close").addEventListener("click", dismiss);
+  $("a2hs-install").addEventListener("click", async () => {
+    if (!installEvent) return dismiss();
+    installEvent.prompt();
+    try { await installEvent.userChoice; } catch {}
+    dismiss();
+  });
+})();
 
 boot();
 </script>
