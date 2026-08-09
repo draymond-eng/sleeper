@@ -463,6 +463,7 @@
 
     <div class="card" id="vote-setup-card" style="display:none">
       <h2>🔌 Turn on live voting</h2>
+      <div id="store-dead-note"></div>
       <p class="sub">One tap creates the league's shared ballot box. Then post the link it gives you in the league chat — anyone who opens it is connected automatically. That's the whole setup.</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn gold" id="store-create">⚡ Create the ballot box</button>
@@ -1884,6 +1885,8 @@ function renderVote() {
   const hasStore = !!voteStore();
   $("vote-setup-card").style.display = hasStore ? "none" : "";
   $("vote-cast-card").style.display = hasStore && open.length ? "" : "none";
+  $("store-dead-note").innerHTML = state.storeDead
+    ? `<div class="msg err">The league's ballot box disappeared (the free store purged it — it happens). Votes cast so far are lost; tap below for a fresh box, then share the new link and send it to Claude to bake in.</div>` : "";
   if (!hasStore) {
     $("live-results").innerHTML = `<p class="sub" style="margin:0">Live voting isn't switched on yet — commish, hit the card above and it's a 30-second job.</p>`;
   } else {
@@ -1918,9 +1921,21 @@ function normalizeStoreUrl(u) {
   if (m) return `https://jsonblob.com/api/jsonBlob/${m[1]}`;
   return /^https?:\/\//i.test(u) ? u : "";
 }
-function voteStore() { return normalizeStoreUrl(VOTING.store || localStorage.getItem("dhq_vote_store") || ""); }
+function voteStore() {
+  // if the configured box is confirmed dead, fall back to a locally created replacement
+  if (state.storeDead) return normalizeStoreUrl(localStorage.getItem("dhq_vote_store") || "");
+  return normalizeStoreUrl(VOTING.store || localStorage.getItem("dhq_vote_store") || "");
+}
 async function storeGet() {
   const r = await fetch(voteStore(), { headers: { Accept: "application/json" } });
+  if (r.status === 404 || r.status === 410) {
+    if (!state.storeDead) {
+      state.storeDead = true;
+      if (normalizeStoreUrl(localStorage.getItem("dhq_vote_store") || "") === normalizeStoreUrl(VOTING.store)) localStorage.removeItem("dhq_vote_store");
+      if (state.view === "vote") renderVote();
+    }
+    throw new Error(`ballot box ${r.status}`);
+  }
   if (!r.ok) throw new Error(`ballot box ${r.status}`);
   const j = await r.json().catch(() => null);
   return j && typeof j === "object" && j.votes && typeof j.votes === "object" ? j : { votes: {} };
@@ -2029,11 +2044,14 @@ $("store-save").addEventListener("click", async () => {
   if (!url) { setMsg("store-out", "err", "That doesn't look like a URL — paste the address from your browser's address bar after you hit Save on jsonblob.com."); return; }
   setMsg("store-out", "info", "Checking the ballot box…");
   localStorage.setItem("dhq_vote_store", url);
+  const wasDead = state.storeDead;
   try {
+    state.storeDead = VOTING.store && normalizeStoreUrl(VOTING.store) !== url ? true : false;
     await storeGet();
     renderVote();
     showBoxSuccess(url);
   } catch (e) {
+    state.storeDead = wasDead;
     localStorage.removeItem("dhq_vote_store");
     setMsg("store-out", "err", `Couldn't read that ballot box (${esc(e.message)}). Double-check the URL — after you hit Save on jsonblob.com, copy what's in the address bar.`);
   }
@@ -2088,6 +2106,7 @@ $("store-create").addEventListener("click", async () => {
     try { url = await createBoxExtendsClass(); }
     catch { url = await createBoxJsonblob(); }
     localStorage.setItem("dhq_vote_store", url);
+    state.storeDead = VOTING.store ? true : false;   // keep ignoring a dead configured box in favor of the new one
     renderVote();
     showBoxSuccess(url);
   } catch (e) {
