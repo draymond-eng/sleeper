@@ -1,0 +1,13 @@
+{
+  "name": "Mason Soccer",
+  "short_name": "Mason Soccer",
+  "description": "Dynasty league home base — trophies, records, votes, and the bank.",
+  "start_url": "/masonsoccer/",
+  "display": "standalone",
+  "background_color": "#0a0e1a",
+  "theme_color": "#0a0e1a",
+  "icons": [
+    { "src": "/icon-mason-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-mason-180.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
+  ]
+}

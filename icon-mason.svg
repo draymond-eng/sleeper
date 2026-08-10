@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="32%" r="85%">
+      <stop offset="0%" stop-color="#1d2c5e"/>
+      <stop offset="100%" stop-color="#0a0e1a"/>
+    </radialGradient>
+    <path id="arcTop" d="M 61 313 A 195 195 0 0 1 451 313" fill="none"/>
+    <path id="arcBot" d="M 60 242 A 196 196 0 0 0 452 242" fill="none"/>
+  </defs>
+  <circle cx="256" cy="256" r="250" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="243" fill="none" stroke="#39d98a" stroke-width="13"/>
+  <circle cx="256" cy="256" r="222" fill="none" stroke="#39d98a" stroke-width="3" opacity=".5"/>
+  <text font-family="'Arial Black','DejaVu Sans',Arial,sans-serif" font-weight="900" font-size="74" fill="#39d98a" letter-spacing="6">
+    <textPath href="#arcTop" startOffset="50%" text-anchor="middle">MASON</textPath>
+  </text>
+  <g transform="rotate(-10 256 280)">
+    <ellipse cx="256" cy="280" rx="103" ry="58" fill="#ffce3a" stroke="#0a0e1a" stroke-width="8"/>
+    <path d="M 205 280 L 307 280" stroke="#0a0e1a" stroke-width="9" stroke-linecap="round"/>
+    <path d="M 222 268 L 222 292 M 245 268 L 245 292 M 268 268 L 268 292 M 291 268 L 291 292" stroke="#0a0e1a" stroke-width="7" stroke-linecap="round"/>
+  </g>
+  <text font-family="'Arial Black','DejaVu Sans',Arial,sans-serif" font-weight="900" font-size="23" fill="#eef2ff" letter-spacing="4">
+    <textPath href="#arcBot" startOffset="50%" text-anchor="middle">SOCCER · FANTASY FOOTBALL</textPath>
+  </text>
+  <circle cx="68" cy="290" r="8" fill="#39d98a"/>
+  <circle cx="444" cy="290" r="8" fill="#39d98a"/>
+</svg>

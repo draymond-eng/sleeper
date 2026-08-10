@@ -276,6 +276,15 @@ document.body.innerHTML = `
 </div>
 `;
 
+/* optional per-league branding (set BRAND in the page config) */
+if (typeof BRAND !== "undefined" && BRAND) {
+  const li = document.querySelector("#league-logo img");
+  if (li && BRAND.icon) { li.src = BRAND.icon; if (BRAND.name) li.alt = BRAND.name; }
+  const ai = document.querySelector("#a2hs img");
+  if (ai && BRAND.iconPng) ai.src = BRAND.iconPng;
+  if (BRAND.name) document.getElementById("site-title").textContent = BRAND.name;
+}
+
 const API = "https://api.sleeper.app/v1";
 const CDN = "https://sleepercdn.com/avatars/thumbs/";
 
