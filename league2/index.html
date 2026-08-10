@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>League HQ</title>
+<meta name="theme-color" content="#0a0e1a" />
+<link rel="icon" href="/icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/icon-180.png" />
+<link rel="manifest" href="/manifest2.webmanifest" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css" />
+</head>
+<body></body>
+<script>
+
+/* =====================================================================
+   COMMISSIONER CONFIG — the only part of this file you need to edit
+   ===================================================================== */
+
+/* 1) Your Sleeper league ID (the long number in your league's URL). */
+const DEFAULT_LEAGUE_ID = "1315074462990737408";
+
+/* 2) The ballot. Add/remove proposals each offseason — the "Make a
+      Proposal" form on the Vote tab hands you entries in exactly this
+      shape, ready to paste.
+      - id:      short & unique, never reuse across years (it's how votes are matched)
+      - options: leave out for a simple Yes/No question
+      - pass:    fraction of Yes (among Yes+No) needed to pass — 0.5 = simple
+                 majority, 0.67 = two-thirds. Only used for Yes/No questions.
+      - status:  "open" while voting, then flip to "passed" or "failed"
+      */
+const PROPOSALS = [];
+
+/* 1b) If a season's league was created fresh on Sleeper (not "renewed"
+      from the year before), Sleeper doesn't link the years. List the
+      missing league IDs here, newest first — whenever the chain breaks,
+      the next one bridges it, and history, the Hall, the Record Book, and
+      the Bank's look-back credits all pick it up. */
+const PREVIOUS_LEAGUE_IDS = [
+  "1181277237991428096",   // 2025
+  "1049059786253271040",   // 2024
+  "993987629324505088",    // 2023
+];
+
+/* 2a) Live voting ballot box — a shared JSON store URL so votes show up
+      live for the whole league. One-time setup: Vote tab → "Create the
+      ballot box", then paste the URL it gives you here. Until then, live
+      voting runs per-device only. */
+const VOTING = { store: "https://moco-ff-moco-ff-default-rtdb.firebaseio.com/league2.json" };
+
+/* league-submitted proposals need this many hands up (proposer included)
+   before they become a live ballot question */
+const SECONDS_NEEDED = 3;
+
+/* 2b) The rookie draft lottery (Article IV). Odds for the non-playoff
+      teams, worst record first. Renormalized automatically if the lottery
+      has fewer teams. */
+const LOTTERY = { weights: [35, 25, 20, 12, 8] };
+
+/* 3) The bank. Dues per team, the weekly high-score bonus, and who has
+      paid. To mark someone paid, add their Sleeper display name to the
+      `paid` list (not case-sensitive) — e.g. paid: ["draymond", "mike23"].
+      Weekly high-score winners are computed automatically from scores. */
+const BANK = {
+  dues: 250,
+  weeklyHighScore: 50,
+  payTo: "",   // e.g. "Zelle: 555-555-5555"
+  paid: [],
+  /* last season's weekly highs credit this year's dues only until the
+     rookie draft completes — then the ledger resets and this season's
+     highs start fresh. Set false to drop last-season credits early. */
+  creditLastSeason: true,
+};
+
+/* 3a) The 2026 weekly award slate — a different $25 prize each week,
+      all computed automatically from scores. Ties split the money; if a
+      week's award has no qualifier, it rolls to that week's high score.
+      Reorder/rename freely (keys must stay from the supported set). */
+const WEEKLY_AWARDS = Array.from({ length: 14 }, (_, i) => (
+  { week: i + 1, key: "high", emoji: "🔥", name: "High Score", how: "Most points" }
+));
+
+/* 3b) Owner bios — optional flavor for the Owners page, keyed by Sleeper
+      display name (not case-sensitive). Career stats and head-to-heads
+      fill in automatically; this is for the trash talk. Example:
+      "draymondwashington": { motto: "Ring or bust.", title: "The Architect" },
+*/
+const BIOS = {};
+
+/* 4) The bylaws, shown on the Constitution tab. */
+const CONSTITUTION = [
+  { section: "Article I — The League", items: ["Bylaws not written yet — commish, fill these in (or ask Claude)."] },
+];
+
+/* ===================================================================== */
+</script>
+<script src="/app.js"></script>
+</html>
