@@ -1806,14 +1806,15 @@ async function renderBank() {
           <div class="owner">${esc(r.detail)}</div></div>
         <span class="owner">$${r.share % 1 ? r.share.toFixed(2) : r.share}${r.winners.length > 1 ? " ea" : ""}</span>
       </div>`).join("");
-    $("whs-sub").textContent = `Last season's weekly highs, weeks 1–14 — credited against this year's dues. This season: a different award every week, starting Week 1. 👇`;
-    $("whs-list").innerHTML = weekRowsHtml(prev)
-      + `<h2 style="font-size:13px;margin:16px 0 4px;color:var(--muted)">THE 2026 SLATE</h2>` + slateRows
-      + `<details style="margin-top:14px">
-          <summary style="cursor:pointer;color:var(--accent);font-size:13.5px;font-weight:600">🔮 What if we'd run this slate last year?</summary>
+    $("whs-sub").textContent = `A different award every week this season — the full slate below. Last season's weekly highs (also below) are credited against this year's dues.`;
+    $("whs-list").innerHTML =
+      `<details style="margin-bottom:14px">
+          <summary style="cursor:pointer;color:var(--accent);font-size:14px;font-weight:700">🔮 What if we'd run this slate last year? Tap it</summary>
           <div class="msg info" style="margin-top:10px"><b>${retroWinners}</b> different ${retroWinners === 1 ? "person cashes" : "people cash"} under the new slate, vs <b>${highWinners}</b> under high-score-only. Same scores, same season — just more ways to win.</div>
           ${retroRows}
-        </details>`;
+        </details>`
+      + `<h2 style="font-size:13px;margin:0 0 4px;color:var(--muted)">THE 2026 SLATE</h2>` + slateRows
+      + `<h2 style="font-size:13px;margin:16px 0 4px;color:var(--muted)">2025 WEEKLY HIGHS (CREDITED)</h2>` + weekRowsHtml(prev);
   } else {
     $("whs-sub").textContent = `A different $${BANK.weeklyHighScore} award every week — the board opens Week 1.`;
     $("whs-list").innerHTML = slateRows;
