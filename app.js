@@ -669,7 +669,7 @@ function renderHomeSacko() {
         ${reigning ? `
           <div class="tag">Reigning Sacko · ${esc(reigning.season)}</div>
           <div class="who">${esc(reigning.sacko.name)}</div>
-          <div class="owner">${reigning.sacko.w}-${reigning.sacko.l} · owes ${esc(champName)} a jersey of the champ's choosing</div>`
+          <div class="owner">${reigning.sacko.w}-${reigning.sacko.l}${Number(reigning.season) >= (typeof SACKO_JERSEY_FROM !== "undefined" ? SACKO_JERSEY_FROM : 0) ? ` · owes ${esc(champName)} a jersey of the champ's choosing` : ` · dodged the jersey rule — it starts with ${typeof SACKO_JERSEY_FROM !== "undefined" ? SACKO_JERSEY_FROM : "this season"}`}</div>`
         : `<div class="tag">Sacko watch</div>`}
         ${watch ? `<div class="owner" style="margin-top:4px">📉 Sacko Watch: <b style="color:var(--bad)">${esc(watch.name)}</b> (${watch.rec}) currently holds the cellar</div>` : ""}
       </div>

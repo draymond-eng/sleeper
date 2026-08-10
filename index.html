@@ -80,6 +80,9 @@ const VOTING = { store: "https://moco-ff-moco-ff-default-rtdb.firebaseio.com/lea
    before they become a live ballot question */
 const SECONDS_NEEDED = 3;
 
+/* first season whose Sacko owes the champ a jersey */
+const SACKO_JERSEY_FROM = 2026;
+
 /* 2b) The rookie draft lottery (Article IV). Odds for the non-playoff
       teams, worst record first. Renormalized automatically if the lottery
       has fewer teams. */
@@ -176,7 +179,7 @@ const CONSTITUTION = [
     section: "Article VI — The Sacko",
     items: [
       "The Sacko is the team with the worst regular-season record (tiebreaker: fewest points for).",
-      "The Sacko buys the league champion a jersey of the champion's choosing, presented at the next draft.",
+      "The Sacko buys the league champion a jersey of the champion's choosing, presented at the next draft (rule starts with the 2026 season — no retroactive debts).",
       "The Sacko's name hangs on the Hall of Champions banner. Forever.",
     ],
   },
