@@ -82,9 +82,22 @@ const BANK = {
       all computed automatically from scores. Ties split the money; if a
       week's award has no qualifier, it rolls to that week's high score.
       Reorder/rename freely (keys must stay from the supported set). */
-const WEEKLY_AWARDS = Array.from({ length: 14 }, (_, i) => (
-  { week: i + 1, key: "high", emoji: "🔥", name: "High Score", how: "Most points" }
-));
+const WEEKLY_AWARDS = [
+  { week: 1,  key: "high",        emoji: "🔥", name: "High Score",        how: "Most points" },
+  { week: 2,  key: "escape",      emoji: "😅", name: "The Great Escape",  how: "Narrowest win" },
+  { week: 3,  key: "blowout",     emoji: "🥊", name: "The Haymaker",      how: "Biggest blowout win" },
+  { week: 4,  key: "target150",   emoji: "🎯", name: "Sharpshooter",      how: "Closest to exactly 150" },
+  { week: 5,  key: "uglyW",       emoji: "🗑", name: "The Ugly W",        how: "Lowest-scoring win" },
+  { week: 6,  key: "silver",      emoji: "🥈", name: "Silver Bullet",     how: "Second-highest score" },
+  { week: 7,  key: "heartbreak",  emoji: "💔", name: "The Heartbreaker",  how: "Most points in a loss" },
+  { week: 8,  key: "median",      emoji: "📊", name: "Mr. Median",        how: "Closest to the week's median score" },
+  { week: 9,  key: "overachieve", emoji: "🚀", name: "The Overachiever",  how: "Most points above their own season average" },
+  { week: 10, key: "towers",      emoji: "🏙", name: "Twin Towers",       how: "Wins the highest-scoring game of the week" },
+  { week: 11, key: "underdog",    emoji: "🐕", name: "The Underdog",      how: "Lowest season average that still won" },
+  { week: 12, key: "ironwill",    emoji: "🧱", name: "Iron Will",         how: "Wins while scoring under their own average" },
+  { week: 13, key: "bigswing",    emoji: "🎢", name: "The Big Swing",     how: "Biggest jump over last week's score" },
+  { week: 14, key: "high",        emoji: "👑", name: "Closing Time",      how: "Most points, one last time" },
+];
 
 /* 3b) Owner bios — optional flavor for the Owners page, keyed by Sleeper
       display name (not case-sensitive). Career stats and head-to-heads
@@ -107,7 +120,7 @@ const CONSTITUTION = [
     items: [
       "Dues are $250 per team per season, due before the rookie draft. You can't make draft picks or waiver claims until you've paid.",
       "Total pot: $3,000.",
-      "Weekly high score: $50 to the week's top scorer, Weeks 1–14 ($700 total). A tie for the week splits the $50.",
+      "Weekly award: $50 to each week's featured award, Weeks 1–14 ($700 total) — a different challenge every week; the slate lives on the Bank tab. Ties split the money; if nobody qualifies it rolls to that week's high score.",
       "Championship payouts: 1st place $1,350 · 2nd place $600 · Regular-season points leader (most points for, Weeks 1–14) $350.",
       "Dues are non-refundable once the rookie draft starts.",
     ],
