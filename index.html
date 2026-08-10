@@ -531,7 +531,7 @@
         <p class="sub" style="margin-top:14px">Sent your Zelle? Tap your own status to flip it to ✓ settled — it updates for the whole league.</p>
       </div>
       <div class="card">
-        <h2>🔥 Weekly High Score</h2>
+        <h2>🏅 Weekly $25 Awards</h2>
         <div id="whs-sub" class="sub"></div>
         <div id="whs-list"></div>
       </div>
@@ -720,6 +720,27 @@ const BANK = {
   creditLastSeason: true,
 };
 
+/* 3a) The 2026 weekly award slate — a different $25 prize each week,
+      all computed automatically from scores. Ties split the money; if a
+      week's award has no qualifier, it rolls to that week's high score.
+      Reorder/rename freely (keys must stay from the supported set). */
+const WEEKLY_AWARDS = [
+  { week: 1,  key: "high",        emoji: "🔥", name: "High Score",        how: "Most points" },
+  { week: 2,  key: "escape",      emoji: "😅", name: "The Great Escape",  how: "Narrowest win" },
+  { week: 3,  key: "blowout",     emoji: "🥊", name: "The Haymaker",      how: "Biggest blowout win" },
+  { week: 4,  key: "target150",   emoji: "🎯", name: "Sharpshooter",      how: "Closest to exactly 150" },
+  { week: 5,  key: "uglyW",       emoji: "🗑", name: "The Ugly W",        how: "Lowest-scoring win" },
+  { week: 6,  key: "silver",      emoji: "🥈", name: "Silver Bullet",     how: "Second-highest score" },
+  { week: 7,  key: "heartbreak",  emoji: "💔", name: "The Heartbreaker",  how: "Most points in a loss" },
+  { week: 8,  key: "median",      emoji: "📊", name: "Mr. Median",        how: "Closest to the week's median score" },
+  { week: 9,  key: "overachieve", emoji: "🚀", name: "The Overachiever",  how: "Most points above their own season average" },
+  { week: 10, key: "towers",      emoji: "🏙", name: "Twin Towers",       how: "Wins the highest-scoring game of the week" },
+  { week: 11, key: "underdog",    emoji: "🐕", name: "The Underdog",      how: "Lowest season average that still won" },
+  { week: 12, key: "ironwill",    emoji: "🧱", name: "Iron Will",         how: "Wins while scoring under their own average" },
+  { week: 13, key: "bigswing",    emoji: "🎢", name: "The Big Swing",     how: "Biggest jump over last week's score" },
+  { week: 14, key: "high",        emoji: "👑", name: "Closing Time",      how: "Most points, one last time" },
+];
+
 /* 3b) Owner bios — optional flavor for the Owners page, keyed by Sleeper
       display name (not case-sensitive). Career stats and head-to-heads
       fill in automatically; this is for the trash talk. Example:
@@ -741,7 +762,7 @@ const CONSTITUTION = [
     items: [
       "Dues are $200 per team per season, due before the rookie draft. You can't make draft picks or waiver claims until you've paid.",
       "Total pot: $2,400.",
-      "Weekly high score: $25 to the top scorer each regular-season week (Weeks 1–14, $350 total). A tie for the week splits the $25.",
+      "Weekly award: $25 to each week's featured award, Weeks 1–14 ($350 total) — a different challenge every week; the slate lives on the Bank tab. Ties split the money; if nobody qualifies it rolls to that week's high score.",
       "Championship payouts: 1st place $1,200 · 2nd place $550 · Regular-season points leader (most points for, Weeks 1–14) $300.",
       "Dues are non-refundable once the rookie draft starts.",
     ],
@@ -1558,6 +1579,107 @@ function seasonHighCredits(sum) {
   }
   return credits;
 }
+/* the weekly award engine: compute a week's winner(s) per the slate */
+function awardForWeek(sum, wk) {
+  const spec = WEEKLY_AWARDS.find((a) => a.week === wk) || { key: "high", emoji: "🔥", name: "High Score", how: "Most points" };
+  const games = sum.games.filter((g) => !g.playoff);
+  const wg = games.filter((g) => g.week === wk);
+  if (!wg.length) return null;
+  const sides = wg.flatMap((g) => [
+    { o: g.a.o, pts: g.a.pts, opp: g.b.pts }, { o: g.b.o, pts: g.b.pts, opp: g.a.pts },
+  ]);
+  const wins = sides.filter((s) => s.pts > s.opp);
+  const priorAvg = (oid) => {
+    const p = games.filter((g) => g.week < wk).flatMap((g) => [g.a, g.b]).filter((s) => s.o.owner_id === oid).map((s) => s.pts);
+    return p.length ? p.reduce((a, b) => a + b, 0) / p.length : null;
+  };
+  const prevWk = (oid) => {
+    const p = games.filter((g) => g.week === wk - 1).flatMap((g) => [g.a, g.b]).find((s) => s.o.owner_id === oid);
+    return p ? p.pts : null;
+  };
+  const pickMax = (arr, f) => { if (!arr.length) return []; const m = Math.max(...arr.map(f)); return arr.filter((x) => Math.abs(f(x) - m) < 1e-9); };
+  const pickMin = (arr, f) => { if (!arr.length) return []; const m = Math.min(...arr.map(f)); return arr.filter((x) => Math.abs(f(x) - m) < 1e-9); };
+  const fmt = (x) => x.toFixed(2);
+
+  let win = [], detail = "";
+  switch (spec.key) {
+    case "escape": win = pickMin(wins, (s) => s.pts - s.opp); if (win.length) detail = `won by ${fmt(win[0].pts - win[0].opp)}`; break;
+    case "blowout": win = pickMax(wins, (s) => s.pts - s.opp); if (win.length) detail = `won by ${fmt(win[0].pts - win[0].opp)}`; break;
+    case "target150": win = pickMin(sides, (s) => Math.abs(s.pts - 150)); if (win.length) detail = `${fmt(win[0].pts)} — ${fmt(Math.abs(win[0].pts - 150))} off 150`; break;
+    case "uglyW": win = pickMin(wins, (s) => s.pts); if (win.length) detail = `won with just ${fmt(win[0].pts)}`; break;
+    case "silver": {
+      const vals = [...new Set(sides.map((s) => s.pts))].sort((a, b) => b - a);
+      if (vals.length > 1) { win = sides.filter((s) => s.pts === vals[1]); detail = `${fmt(vals[1])} pts, just behind`; }
+      break;
+    }
+    case "heartbreak": win = pickMax(sides.filter((s) => s.pts < s.opp), (s) => s.pts); if (win.length) detail = `${fmt(win[0].pts)} in a loss`; break;
+    case "median": {
+      const pts = sides.map((s) => s.pts).sort((a, b) => a - b);
+      const med = pts.length % 2 ? pts[(pts.length - 1) / 2] : (pts[pts.length / 2 - 1] + pts[pts.length / 2]) / 2;
+      win = pickMin(sides, (s) => Math.abs(s.pts - med));
+      if (win.length) detail = `${fmt(win[0].pts)} vs median ${fmt(med)}`;
+      break;
+    }
+    case "overachieve": {
+      const cand = sides.filter((s) => priorAvg(s.o.owner_id) != null);
+      win = pickMax(cand, (s) => s.pts - priorAvg(s.o.owner_id));
+      if (win.length) detail = `+${fmt(win[0].pts - priorAvg(win[0].o.owner_id))} over their average`;
+      break;
+    }
+    case "towers": {
+      const g = pickMax(wg, (x) => x.a.pts + x.b.pts)[0];
+      if (g) {
+        win = g.a.pts === g.b.pts ? [{ o: g.a.o, pts: g.a.pts }, { o: g.b.o, pts: g.b.pts }]
+          : [g.a.pts > g.b.pts ? { o: g.a.o, pts: g.a.pts, opp: g.b.pts } : { o: g.b.o, pts: g.b.pts, opp: g.a.pts }];
+        detail = `won a ${fmt(g.a.pts + g.b.pts)}-point shootout`;
+      }
+      break;
+    }
+    case "underdog": {
+      const cand = wins.filter((s) => priorAvg(s.o.owner_id) != null);
+      win = pickMin(cand, (s) => priorAvg(s.o.owner_id));
+      if (win.length) detail = `averaging ${fmt(priorAvg(win[0].o.owner_id))} and still won`;
+      break;
+    }
+    case "ironwill": {
+      const cand = wins.filter((s) => priorAvg(s.o.owner_id) != null && s.pts < priorAvg(s.o.owner_id));
+      win = pickMax(cand, (s) => s.pts - s.opp);
+      if (win.length) detail = `gutted out a W ${fmt(priorAvg(win[0].o.owner_id) - win[0].pts)} under their average`;
+      break;
+    }
+    case "bigswing": {
+      const cand = sides.filter((s) => prevWk(s.o.owner_id) != null);
+      win = pickMax(cand, (s) => s.pts - prevWk(s.o.owner_id));
+      if (win.length) detail = `+${fmt(win[0].pts - prevWk(win[0].o.owner_id))} on last week`;
+      break;
+    }
+  }
+  let fellBack = false;
+  if (!win.length) {   // "high" key and any award with no qualifier
+    win = pickMax(sides, (s) => s.pts);
+    if (spec.key !== "high") fellBack = true;
+    detail = `${fmt(win[0].pts)} pts`;
+  }
+  return { spec, winners: win.map((s) => s.o), detail, share: BANK.weeklyHighScore / win.length, fellBack };
+}
+
+/* current-season credits + display rows from the award slate */
+function seasonAwardResults(sum) {
+  const rows = [], credits = {};
+  if (!sum) return { rows, credits };
+  const weeks = [...new Set(sum.games.filter((g) => !g.playoff).map((g) => g.week))].sort((a, b) => a - b);
+  for (const wk of weeks) {
+    const r = awardForWeek(sum, wk);
+    if (!r) continue;
+    rows.push({ week: wk, ...r });
+    for (const o of r.winners) {
+      const c = credits[o.owner_id] = credits[o.owner_id] || { weeks: 0, cash: 0, name: o.name };
+      c.weeks++; c.cash += r.share;
+    }
+  }
+  return { rows, credits };
+}
+
 function weekRowsHtml(sum) {
   const games = sum.games.filter((g) => !g.playoff);
   return [...new Set(games.map((g) => g.week))].sort((a, b) => a - b).map((wk) => {
@@ -1594,8 +1716,9 @@ async function renderBank() {
   } catch {}
   if (draftDone || BANK.creditLastSeason === false) prev = null;
 
-  const curCredits = seasonHighCredits(cur);
-  const prevCredits = seasonHighCredits(prev);
+  const curAwards = seasonAwardResults(cur);
+  const curCredits = curAwards.credits;
+  const prevCredits = seasonHighCredits(prev);   // 2025 ran the classic high-score rule
 
   // paid status lives in the shared ballot box (tap to toggle); BANK.paid config still counts as paid
   let bankDoc = null;
@@ -1609,7 +1732,7 @@ async function renderBank() {
   const money = (x) => `$${x % 1 ? x.toFixed(2) : x}`;
   const canToggle = !!voteStore();
   $("dues-status").innerHTML =
-    `$${BANK.dues} per team · every weekly high score auto-credits $${BANK.weeklyHighScore}` +
+    `$${BANK.dues} per team · every weekly award win auto-credits $${BANK.weeklyHighScore}` +
     `${prev ? ` (last season's included)` : ""} · <b>${paidCount} of ${rows.length} settled</b>` +
     (canToggle ? `<br>Tap a status to mark someone paid — it updates for the whole league.` : "") +
     (draftDone ? `<br>🔄 Ledger reset at the draft — last season is settled, this season's highs credit from Week 1.` : "");
@@ -1630,7 +1753,7 @@ async function renderBank() {
           : `<span ${chip}>${paid ? "✓ settled" : "open"}</span>`}</td>
       </tr>`;
     }).join("")}</tbody></table>
-    ${prev ? `<p class="sub" style="margin-top:10px">HS credits = $${BANK.weeklyHighScore} × weekly high scores won (last season weeks 1–14${cur && cur.games.length ? " + this season so far" : ""}).</p>` : ""}`;
+    ${prev ? `<p class="sub" style="margin-top:10px">Credits = $${BANK.weeklyHighScore} × award wins (last season's weekly highs${cur && cur.games.length ? " + this season's weekly awards" : ""}).</p>` : ""}`;
 
   $("dues-list").querySelectorAll("button.chip[data-uid]").forEach((b) =>
     b.addEventListener("click", async () => {
@@ -1649,16 +1772,34 @@ async function renderBank() {
       }
     }));
 
-  // weekly high score detail
-  if (cur && cur.games.filter((g) => !g.playoff).length) {
-    $("whs-sub").textContent = `$${BANK.weeklyHighScore} to the top scorer each regular-season week — auto-credited to the ledger.`;
-    $("whs-list").innerHTML = weekRowsHtml(cur);
-  } else if (prev) {
-    $("whs-sub").textContent = `Last season's winners, weeks 1–14 — already credited against this year's dues. This season's board starts Week 1.`;
-    $("whs-list").innerHTML = weekRowsHtml(prev);
+  // weekly award board: winners so far, then the upcoming slate
+  const playedWeeks = new Set(curAwards.rows.map((r) => r.week));
+  const upcoming = WEEKLY_AWARDS.filter((a) => !playedWeeks.has(a.week));
+  const wonRows = curAwards.rows.map((r) => `
+    <div class="record" style="padding:8px 4px">
+      <div class="ico" style="font-size:13px;color:var(--muted)">Wk ${r.week}</div>
+      <div style="flex:1">
+        <div class="owner">${r.spec.emoji} ${esc(r.spec.name)}${r.fellBack ? " · no qualifier, rolled to high score" : ""}</div>
+        <b>${r.winners.map((o) => esc(o.name)).join(" + ")}</b>
+        <div class="owner">${esc(r.detail)}${r.winners.length > 1 ? " · tie, pot split" : ""}</div>
+      </div>
+      <b style="color:var(--good)">$${r.share % 1 ? r.share.toFixed(2) : r.share}${r.winners.length > 1 ? " each" : ""}</b>
+    </div>`).join("");
+  const slateRows = upcoming.map((a) => `
+    <div class="record" style="padding:7px 4px;opacity:.65">
+      <div class="ico" style="font-size:13px;color:var(--muted)">Wk ${a.week}</div>
+      <div style="flex:1"><b>${a.emoji} ${esc(a.name)}</b><div class="owner">${esc(a.how)}</div></div>
+      <span class="owner">$${BANK.weeklyHighScore}</span>
+    </div>`).join("");
+  if (curAwards.rows.length) {
+    $("whs-sub").textContent = `A different $${BANK.weeklyHighScore} award every week — computed automatically, credited to the ledger. Ties split; no qualifier rolls to high score.`;
+    $("whs-list").innerHTML = wonRows + (upcoming.length ? `<h2 style="font-size:13px;margin:16px 0 4px;color:var(--muted)">STILL TO PLAY FOR</h2>` + slateRows : "");
+  } else if (prev && !draftDone) {
+    $("whs-sub").textContent = `Last season's weekly highs, weeks 1–14 — credited against this year's dues. This season: a different award every week, starting Week 1. 👇`;
+    $("whs-list").innerHTML = weekRowsHtml(prev) + `<h2 style="font-size:13px;margin:16px 0 4px;color:var(--muted)">THE 2026 SLATE</h2>` + slateRows;
   } else {
-    $("whs-sub").textContent = `$${BANK.weeklyHighScore} to the top scorer each regular-season week — computed automatically from Sleeper scores.`;
-    $("whs-list").innerHTML = `<p class="sub" style="margin:0">No scores yet — the first $${BANK.weeklyHighScore} goes out after Week 1. 💸</p>`;
+    $("whs-sub").textContent = `A different $${BANK.weeklyHighScore} award every week — the board opens Week 1.`;
+    $("whs-list").innerHTML = slateRows;
   }
 
   // winnings leaderboard across both credited seasons
