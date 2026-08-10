@@ -164,7 +164,7 @@ document.body.innerHTML = `
         <p class="sub" style="margin-top:14px">Sent your Zelle? Tap your own status to flip it to ✓ settled — it updates for the whole league.</p>
       </div>
       <div class="card">
-        <h2>🏅 Weekly $25 Awards</h2>
+        <h2 id="whs-title">🏅 Weekly Awards</h2>
         <div id="whs-sub" class="sub"></div>
         <div id="whs-list"></div>
       </div>
@@ -1162,6 +1162,7 @@ function weekRowsHtml(sum) {
 
 async function renderBank() {
   $("bank-payto").textContent = BANK.payTo || "";
+  $("whs-title").textContent = `🏅 Weekly $${BANK.weeklyHighScore} Awards`;
   $("dues-list").innerHTML = loadingHtml("Balancing the books…");
   $("whs-list").innerHTML = "";
   $("winnings").innerHTML = "";
