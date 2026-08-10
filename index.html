@@ -502,9 +502,18 @@
 
     <div class="card">
       <h2>📜 Make a Proposal</h2>
-      <p class="sub">Got an idea for the league? Draft it here — you'll get a message to drop in the chat, and the commish gets it in ready-to-add form for the next ballot.</p>
+      <p class="sub">Got an idea? Post it here — when 3 hands go up, it's on the ballot for a league vote.</p>
       <label>Your name</label>
       <select id="prop-who"></select>
+      <label>What kind of proposal?</label>
+      <select id="prop-kind">
+        <option value="rule">League rule change</option>
+        <option value="bylaw">Bylaw amendment (changes the Constitution)</option>
+      </select>
+      <div id="prop-article-wrap" class="hidden">
+        <label>Which article does it amend?</label>
+        <select id="prop-article"></select>
+      </div>
       <label>Proposal title</label>
       <input type="text" id="prop-title" placeholder="e.g. Add a 3rd IR spot" />
       <label>The pitch (why should we do this?)</label>
@@ -603,7 +612,8 @@
   <section id="view-rules" class="hidden">
     <div class="card">
       <h2>📕 League Constitution</h2>
-      <p class="sub">The law of the land. Changes require a ballot — see the <a href="#" data-goto="vote">League Vote</a> tab.</p>
+      <p class="sub">The law of the land. Amending it takes a ballot: propose the change, get 3 hands up, win the vote.</p>
+      <div style="margin-bottom:14px"><button class="btn gold small" id="rules-propose">📜 Propose an amendment</button></div>
       <div id="rules-list"></div>
     </div>
   </section>
@@ -2095,6 +2105,8 @@ function renderVote() {
   $("prop-who").innerHTML = userOpts;
   const me = localStorage.getItem("dhq_me");
   if (me && state.users.some((u) => u.user_id === me)) $("ballot-who").value = me;
+  $("prop-article").innerHTML = CONSTITUTION.map((s) => `<option value="${esc(s.section)}">${esc(s.section)}</option>`).join("")
+    + `<option value="New article">A brand-new article</option>`;
 
   const hasStore = !!voteStore();
   $("vote-setup-card").style.display = hasStore ? "none" : "";
@@ -2342,7 +2354,10 @@ $("prop-gen").addEventListener("click", async () => {
   const year = state.nfl ? state.nfl.league_season : new Date().getFullYear();
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 30);
 
-  const chatText = `📜 RULE PROPOSAL from ${name}:\n“${title}”\n${details ? details + "\n" : ""}${opts ? "Options: " + opts.join(" / ") : "Vote: Yes / No"}\nNeeds ${SECONDS_NEEDED} hands up to hit the ballot — second it at ${location.origin}${location.pathname}`;
+  const isBylaw = $("prop-kind").value === "bylaw";
+  const article = isBylaw ? $("prop-article").value : null;
+  const fullDetails = (isBylaw ? `⚖️ Bylaw amendment — ${article}. ` : "") + details;
+  const chatText = `📜 ${isBylaw ? `BYLAW AMENDMENT (${article})` : "RULE PROPOSAL"} from ${name}:\n“${title}”\n${details ? details + "\n" : ""}${opts ? "Options: " + opts.join(" / ") : "Vote: Yes / No"}\nNeeds ${SECONDS_NEEDED} hands up to hit the ballot — second it at ${location.origin}${location.pathname}`;
   const propId = `${year}-${slug}`;
 
   if (voteStore()) {
@@ -2350,7 +2365,7 @@ $("prop-gen").addEventListener("click", async () => {
     try {
       const doc = await storeGet().catch(() => ({ votes: {} }));
       doc.proposals = doc.proposals || {};
-      doc.proposals[propId] = { id: propId, by: who, name, title, details, options: opts, ts: Date.now(), seconds: { [who]: Date.now() } };
+      doc.proposals[propId] = { id: propId, by: who, name, title, details: fullDetails, options: opts, ts: Date.now(), seconds: { [who]: Date.now() } };
       await storePut(doc);
       localStorage.setItem("dhq_me", who);
       renderLiveResults(doc);
@@ -2368,6 +2383,16 @@ $("prop-gen").addEventListener("click", async () => {
       <div class="ballot-code" id="prop-chat-text">${esc(chatText)}</div>`;
   }
   $("prop-copy").classList.remove("hidden");
+});
+
+$("prop-kind").addEventListener("change", () => {
+  $("prop-article-wrap").classList.toggle("hidden", $("prop-kind").value !== "bylaw");
+});
+$("rules-propose").addEventListener("click", () => {
+  showView("vote");
+  $("prop-kind").value = "bylaw";
+  $("prop-article-wrap").classList.remove("hidden");
+  $("prop-title").scrollIntoView({ behavior: "smooth", block: "center" });
 });
 
 /* seconding: tap to raise/withdraw your hand for a pending proposal */
