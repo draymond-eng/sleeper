@@ -700,6 +700,10 @@ const PREVIOUS_LEAGUE_IDS = [
       voting runs per-device only. */
 const VOTING = { store: "https://moco-ff-moco-ff-default-rtdb.firebaseio.com/leaguehq.json" };
 
+/* league-submitted proposals need this many hands up (proposer included)
+   before they become a live ballot question */
+const SECONDS_NEEDED = 3;
+
 /* 2b) The rookie draft lottery (Article IV). Odds for the non-playoff
       teams, worst record first. Renormalized automatically if the lottery
       has fewer teams. */
@@ -2020,39 +2024,45 @@ function renderRules() {
 /* ---------------- VOTE (ballot + tally + proposals) ---------------- */
 function propOptions(p) { return p.options || ["Yes", "No"]; }
 
-function renderVote() {
-  if (!PROPOSALS.length) {
-    $("prop-list").innerHTML = `<p class="sub">Nothing on the ballot right now. Use “Make a Proposal” below to get something rolling.</p>`;
-  } else {
-    $("prop-list").innerHTML = PROPOSALS.map((p) => `
-      <div class="prop">
-        <h3>${esc(p.title)} <span class="chip ${esc(p.status)}">${esc(p.status)}</span></h3>
-        <div class="details">${esc(p.details || "")}</div>
-        ${p.options ? `<div class="details" style="margin-top:4px">Options: ${p.options.map(esc).join(" · ")}</div>`
-          : `<div class="details" style="margin-top:4px">Yes/No · ${(p.pass || 0.5) === 0.5 ? "needs a majority to pass" : `needs ${Math.round(p.pass * 100)}% yes to pass`}</div>`}
-      </div>`).join("");
+/* official ballot (config) + league-submitted proposals (shared store) */
+function allProps() { return PROPOSALS.concat(state.extraProps || []); }
+
+function renderBallotUI() {
+  const list = allProps();
+  $("prop-list").innerHTML = list.length ? list.map((p) => `
+    <div class="prop">
+      <h3>${esc(p.title)} <span class="chip ${esc(p.status)}">${esc(p.status)}</span></h3>
+      <div class="details">${esc(p.details || "")}</div>
+      ${p.options ? `<div class="details" style="margin-top:4px">Options: ${p.options.map(esc).join(" · ")}</div>`
+        : `<div class="details" style="margin-top:4px">Yes/No · ${(p.pass || 0.5) === 0.5 ? "needs a majority to pass" : `needs ${Math.round(p.pass * 100)}% yes to pass`}</div>`}
+    </div>`).join("")
+    : `<p class="sub">Nothing on the ballot right now. Use “Make a Proposal” below to get something rolling.</p>`;
+
+  // proposals still gathering seconds
+  const me = $("ballot-who").value || localStorage.getItem("dhq_me");
+  const uname = (uid) => { const u = state.users.find((x) => x.user_id === uid); return u ? u.display_name : "?"; };
+  const pendingList = state.pendingProps || [];
+  if (pendingList.length) {
+    $("prop-list").innerHTML += `<h2 style="font-size:13px;margin:18px 0 4px;color:var(--muted)">✋ NEEDS SECONDS TO HIT THE BALLOT</h2>` +
+      pendingList.map((p) => {
+        const secs = Object.keys(p.seconds || {});
+        const iSeconded = me && secs.includes(me);
+        return `<div class="prop">
+          <h3 style="font-size:14px">${esc(p.title)} <span class="chip open">${secs.length} of ${SECONDS_NEEDED}</span></h3>
+          <div class="details">${esc(p.details || "")}${p.options && p.options.length ? `<div style="margin-top:4px">Options: ${p.options.map(esc).join(" · ")}</div>` : ""}</div>
+          <div class="owner" style="margin-top:6px">by ${esc(p.name || "?")} · hands up: ${secs.map((s) => esc(uname(s))).join(", ") || "—"}</div>
+          <div style="margin-top:9px"><button class="btn small ${iSeconded ? "" : "gold"}" data-second="${esc(p.id)}">${iSeconded ? "✋ Seconded — tap to withdraw" : `🙋 Second it (${secs.length}/${SECONDS_NEEDED})`}</button></div>
+        </div>`;
+      }).join("");
   }
 
-  const open = PROPOSALS.filter((p) => p.status === "open");
-  const userOpts = `<option value="">— pick your name —</option>` +
-    state.users.map((u) => `<option value="${esc(u.user_id)}">${esc(u.display_name)}${u.metadata && u.metadata.team_name ? ` (${esc(u.metadata.team_name)})` : ""}</option>`).join("");
-  $("ballot-who").innerHTML = userOpts;
-  $("prop-who").innerHTML = userOpts;
-  const me = localStorage.getItem("dhq_me");
-  if (me && state.users.some((u) => u.user_id === me)) $("ballot-who").value = me;
-
-  const hasStore = !!voteStore();
-  $("vote-setup-card").style.display = hasStore ? "none" : "";
-  $("vote-cast-card").style.display = hasStore && open.length ? "" : "none";
-  $("store-dead-note").innerHTML = state.storeDead
-    ? `<div class="msg err">The league's ballot box disappeared (the free store purged it — it happens). Votes cast so far are lost; tap below for a fresh box, then share the new link and send it to Claude to bake in.</div>` : "";
-  if (!hasStore) {
-    $("live-results").innerHTML = `<p class="sub" style="margin:0">Live voting isn't switched on yet — commish, hit the card above and it's a 30-second job.</p>`;
-  } else {
-    refreshLive().catch((e) => { $("live-results").innerHTML = `<div class="msg err">Couldn't reach the ballot box — ${esc(e.message)}</div>`; });
-    startLivePolling();
-  }
-
+  const open = list.filter((p) => p.status === "open");
+  // preserve any picks already made before rebuilding
+  const kept = {};
+  $("ballot-props").querySelectorAll(".prop").forEach((el) => {
+    const s = el.querySelector(".vote-opt.sel");
+    if (s) kept[el.dataset.prop] = s.dataset.opt;
+  });
   if (!open.length) {
     $("ballot-props").innerHTML = `<p class="sub" style="margin-top:12px">No open proposals to vote on.</p>`;
   } else {
@@ -2064,12 +2074,37 @@ function renderVote() {
           <button class="vote-opt" data-opt="__abstain">Abstain</button>
         </div>
       </div>`).join("");
-    $("ballot-props").querySelectorAll(".prop").forEach((el) =>
-      el.querySelectorAll(".vote-opt").forEach((b) =>
+    $("ballot-props").querySelectorAll(".prop").forEach((el) => {
+      el.querySelectorAll(".vote-opt").forEach((b) => {
+        if (kept[el.dataset.prop] === b.dataset.opt) b.classList.add("sel");
         b.addEventListener("click", () => {
           el.querySelectorAll(".vote-opt").forEach((x) => x.classList.remove("sel"));
           b.classList.add("sel");
-        })));
+        });
+      });
+    });
+  }
+  $("vote-cast-card").style.display = voteStore() && open.length ? "" : "none";
+}
+
+function renderVote() {
+  renderBallotUI();
+  const userOpts = `<option value="">— pick your name —</option>` +
+    state.users.map((u) => `<option value="${esc(u.user_id)}">${esc(u.display_name)}${u.metadata && u.metadata.team_name ? ` (${esc(u.metadata.team_name)})` : ""}</option>`).join("");
+  $("ballot-who").innerHTML = userOpts;
+  $("prop-who").innerHTML = userOpts;
+  const me = localStorage.getItem("dhq_me");
+  if (me && state.users.some((u) => u.user_id === me)) $("ballot-who").value = me;
+
+  const hasStore = !!voteStore();
+  $("vote-setup-card").style.display = hasStore ? "none" : "";
+  $("store-dead-note").innerHTML = state.storeDead
+    ? `<div class="msg err">The league's ballot box disappeared (the free store purged it — it happens). Votes cast so far are lost; tap below for a fresh box, then share the new link and send it to Claude to bake in.</div>` : "";
+  if (!hasStore) {
+    $("live-results").innerHTML = `<p class="sub" style="margin:0">Live voting isn't switched on yet — commish, hit the card above and it's a 30-second job.</p>`;
+  } else {
+    refreshLive().catch((e) => { $("live-results").innerHTML = `<div class="msg err">Couldn't reach the ballot box — ${esc(e.message)}</div>`; });
+    startLivePolling();
   }
 }
 
@@ -2115,7 +2150,27 @@ function startLivePolling() {
 async function refreshLive() { renderLiveResults(await storeGet()); }
 
 function renderLiveResults(doc) {
-  const open = PROPOSALS.filter((p) => p.status === "open");
+  // league-submitted proposals: 3 seconds puts one on the ballot
+  const submitted = Object.values(doc.proposals || {})
+    .filter((p) => p && p.title && p.id && !PROPOSALS.some((x) => x.id === p.id))
+    .sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  const promoted = submitted
+    .filter((p) => Object.keys(p.seconds || {}).length >= SECONDS_NEEDED)
+    .map((p) => ({
+      id: p.id, title: p.title,
+      details: (p.details || "") + (p.name ? `${p.details ? " " : ""}(proposed by ${p.name})` : ""),
+      options: p.options && p.options.length ? p.options : undefined,
+      pass: 0.5, status: "open",
+    }));
+  const pending = submitted.filter((p) => Object.keys(p.seconds || {}).length < SECONDS_NEEDED);
+  if (JSON.stringify(promoted) !== JSON.stringify(state.extraProps || []) ||
+      JSON.stringify(pending) !== JSON.stringify(state.pendingProps || [])) {
+    state.extraProps = promoted;
+    state.pendingProps = pending;
+    renderBallotUI();
+  }
+
+  const open = allProps().filter((p) => p.status === "open");
   const entries = Object.entries(doc.votes || {});
   const nameOf = (uid) => {
     const u = state.users.find((x) => x.user_id === uid);
@@ -2274,7 +2329,7 @@ $("store-create").addEventListener("click", async () => {
 });
 
 /* proposal builder */
-$("prop-gen").addEventListener("click", () => {
+$("prop-gen").addEventListener("click", async () => {
   const who = $("prop-who").value;
   const title = $("prop-title").value.trim();
   const details = $("prop-details").value.trim();
@@ -2287,23 +2342,56 @@ $("prop-gen").addEventListener("click", () => {
   const year = state.nfl ? state.nfl.league_season : new Date().getFullYear();
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 30);
 
-  const chatText = `📜 RULE PROPOSAL from ${name}:\n“${title}”\n${details ? details + "\n" : ""}${opts ? "Options: " + opts.join(" / ") : "Vote: Yes / No"}`;
-  const snippet =
-`  {
-    id: "${year}-${slug}",
-    title: ${JSON.stringify(title)},
-    details: ${JSON.stringify(details + (details ? " " : "") + `(proposed by ${name})`)},${opts ? `
-    options: ${JSON.stringify(opts)},` : `
-    pass: 0.5,`}
-    status: "open",
-  },`;
+  const chatText = `📜 RULE PROPOSAL from ${name}:\n“${title}”\n${details ? details + "\n" : ""}${opts ? "Options: " + opts.join(" / ") : "Vote: Yes / No"}\nNeeds ${SECONDS_NEEDED} hands up to hit the ballot — second it at ${location.origin}${location.pathname}`;
+  const propId = `${year}-${slug}`;
 
-  $("prop-out").innerHTML = `
-    <div class="msg ok">Here's your proposal — paste the message in the league chat to start the debate.</div>
-    <div class="ballot-code" id="prop-chat-text">${esc(chatText)}</div>
-    <p class="sub" style="margin-top:14px">Commish: to put it on the ballot, add this to the <code>PROPOSALS</code> list at the top of this page's source:</p>
-    <div class="ballot-code">${esc(snippet)}</div>`;
+  if (voteStore()) {
+    $("prop-out").innerHTML = loadingHtml("Posting it…");
+    try {
+      const doc = await storeGet().catch(() => ({ votes: {} }));
+      doc.proposals = doc.proposals || {};
+      doc.proposals[propId] = { id: propId, by: who, name, title, details, options: opts, ts: Date.now(), seconds: { [who]: Date.now() } };
+      await storePut(doc);
+      localStorage.setItem("dhq_me", who);
+      renderLiveResults(doc);
+      $("prop-out").innerHTML = `
+        <div class="msg ok">Posted ✓ — your hand is up as 1 of ${SECONDS_NEEDED}. When ${SECONDS_NEEDED - 1} more second it, “${esc(title)}” goes live on the ballot automatically.</div>
+        <p class="sub" style="margin:10px 0 6px">Drop this in the league chat to rally the seconds:</p>
+        <div class="ballot-code" id="prop-chat-text">${esc(chatText)}</div>`;
+      $("prop-title").value = ""; $("prop-details").value = ""; $("prop-options").value = "";
+    } catch (e) {
+      $("prop-out").innerHTML = `<div class="msg err">Couldn't reach the ballot box — ${esc(e.message)}. Try again in a second.</div>`;
+    }
+  } else {
+    $("prop-out").innerHTML = `
+      <div class="msg ok">Here's your proposal — paste the message in the league chat to start the debate.</div>
+      <div class="ballot-code" id="prop-chat-text">${esc(chatText)}</div>`;
+  }
   $("prop-copy").classList.remove("hidden");
+});
+
+/* seconding: tap to raise/withdraw your hand for a pending proposal */
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-second]");
+  if (!b) return;
+  const me = $("ballot-who").value || localStorage.getItem("dhq_me");
+  if (!me) { setMsg("vote-out", "err", "Pick your name in “Cast Your Vote” first, then second it."); $("vote-cast-card").scrollIntoView({ behavior: "smooth" }); return; }
+  b.disabled = true;
+  try {
+    const doc = await storeGet().catch(() => ({ votes: {} }));
+    const p = (doc.proposals || {})[b.dataset.second];
+    if (p) {
+      p.seconds = p.seconds || {};
+      if (p.seconds[me]) delete p.seconds[me];
+      else p.seconds[me] = Date.now();
+      await storePut(doc);
+      localStorage.setItem("dhq_me", me);
+      renderLiveResults(doc);
+    }
+  } catch (err) {
+    setMsg("vote-out", "err", `Couldn't reach the ballot box — ${esc(err.message)}.`);
+    b.disabled = false;
+  }
 });
 
 $("prop-copy").addEventListener("click", async () => {
