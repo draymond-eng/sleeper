@@ -1795,8 +1795,25 @@ async function renderBank() {
     $("whs-sub").textContent = `A different $${BANK.weeklyHighScore} award every week — computed automatically, credited to the ledger. Ties split; no qualifier rolls to high score.`;
     $("whs-list").innerHTML = wonRows + (upcoming.length ? `<h2 style="font-size:13px;margin:16px 0 4px;color:var(--muted)">STILL TO PLAY FOR</h2>` + slateRows : "");
   } else if (prev && !draftDone) {
+    const retro = seasonAwardResults(prev);
+    const retroWinners = new Set(Object.keys(retro.credits)).size;
+    const highWinners = new Set(Object.keys(prevCredits)).size;
+    const retroRows = retro.rows.map((r) => `
+      <div class="record" style="padding:7px 4px">
+        <div class="ico" style="font-size:13px;color:var(--muted)">Wk ${r.week}</div>
+        <div style="flex:1"><div class="owner">${r.spec.emoji} ${esc(r.spec.name)}${r.fellBack ? " · rolled to high score" : ""}</div>
+          <b>${r.winners.map((o) => esc(o.name)).join(" + ")}</b>
+          <div class="owner">${esc(r.detail)}</div></div>
+        <span class="owner">$${r.share % 1 ? r.share.toFixed(2) : r.share}${r.winners.length > 1 ? " ea" : ""}</span>
+      </div>`).join("");
     $("whs-sub").textContent = `Last season's weekly highs, weeks 1–14 — credited against this year's dues. This season: a different award every week, starting Week 1. 👇`;
-    $("whs-list").innerHTML = weekRowsHtml(prev) + `<h2 style="font-size:13px;margin:16px 0 4px;color:var(--muted)">THE 2026 SLATE</h2>` + slateRows;
+    $("whs-list").innerHTML = weekRowsHtml(prev)
+      + `<h2 style="font-size:13px;margin:16px 0 4px;color:var(--muted)">THE 2026 SLATE</h2>` + slateRows
+      + `<details style="margin-top:14px">
+          <summary style="cursor:pointer;color:var(--accent);font-size:13.5px;font-weight:600">🔮 What if we'd run this slate last year?</summary>
+          <div class="msg info" style="margin-top:10px"><b>${retroWinners}</b> different ${retroWinners === 1 ? "person cashes" : "people cash"} under the new slate, vs <b>${highWinners}</b> under high-score-only. Same scores, same season — just more ways to win.</div>
+          ${retroRows}
+        </details>`;
   } else {
     $("whs-sub").textContent = `A different $${BANK.weeklyHighScore} award every week — the board opens Week 1.`;
     $("whs-list").innerHTML = slateRows;
