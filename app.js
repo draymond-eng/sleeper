@@ -1600,7 +1600,11 @@ async function storeGet() {
   }
   if (!r.ok) throw new Error(`ballot box ${r.status}`);
   const j = await r.json().catch(() => null);
-  return j && typeof j === "object" && j.votes && typeof j.votes === "object" ? j : { votes: {} };
+  // Firebase strips empty objects, so "votes" may be missing on a quiet
+  // league — keep every other key (paid, proposals) instead of resetting
+  if (j && typeof j === "object" && !Array.isArray(j))
+    return { ...j, votes: j.votes && typeof j.votes === "object" ? j.votes : {} };
+  return { votes: {} };
 }
 async function storePut(doc) {
   const r = await fetch(voteStore(), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(doc) });
